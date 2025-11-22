@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use std::fmt;
-use thiserror::Error;
 
-mod status;
-mod tx_type;
+pub mod errors;
+pub mod status;
+pub mod tx_type;
 
-use status::{Status, StatusParseError};
-use tx_type::{TxType, TxTypeParseError};
+use errors::FromLinesError;
+use status::Status;
+use tx_type::TxType;
 
+#[derive(Debug, Clone)]
 pub struct Record {
     tx_id: u64,
     tx_type: TxType,
@@ -21,45 +23,15 @@ pub struct Record {
 
 macro_rules! setter {
     ($name:ident, $field:ident, $type:ty) => {
-        fn $name(&mut self, $field: $type) -> &Self {
+        pub fn $name(&mut self, $field: $type) -> &mut Self {
             self.$field = $field;
             self
         }
     };
 }
 
-#[derive(Debug, Error, PartialEq)]
-pub enum FromLinesError {
-    #[error("Colon after key={0} not found")]
-    ColonNotFound(String),
-    #[error("Incorrect value format ({description})")]
-    IncorrectValueFormat { description: String },
-    #[error("Unexpected key found: {0}")]
-    UnexpectedKeyFound(String),
-    #[error("Missing key {0}")]
-    MissingKey(String),
-    #[error("Unexpected error. line={line}, description={description}")]
-    UnexpectedError { line: String, description: String },
-}
-
-impl From<TxTypeParseError> for FromLinesError {
-    fn from(e: TxTypeParseError) -> Self {
-        FromLinesError::IncorrectValueFormat {
-            description: e.to_string(),
-        }
-    }
-}
-
-impl From<StatusParseError> for FromLinesError {
-    fn from(e: StatusParseError) -> Self {
-        FromLinesError::IncorrectValueFormat {
-            description: e.to_string(),
-        }
-    }
-}
-
 impl Record {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             tx_id: 0,
             tx_type: TxType::Deposit,
