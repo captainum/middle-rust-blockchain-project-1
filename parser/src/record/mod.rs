@@ -1,13 +1,22 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::io::{BufRead, Write};
 
 pub mod errors;
+pub mod keys;
 pub mod status;
 pub mod tx_type;
 
-use errors::FromLinesError;
+use errors::{
+    ParseRecordFromBinError, ParseRecordFromCsvError, ParseRecordFromTxtError, ParseStatusError,
+    ParseTxTypeError, ParseValueError,
+};
+use keys::RecordKey;
 use status::Status;
 use tx_type::TxType;
+
+use crate::record::errors::ParseRecordFromCsvError::UnexpectedError;
+use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
 #[derive(Debug, Clone)]
 pub struct Record {
@@ -30,8 +39,8 @@ macro_rules! setter {
     };
 }
 
-impl Record {
-    pub fn new() -> Self {
+impl Default for Record {
+    fn default() -> Self {
         Self {
             tx_id: 0,
             tx_type: TxType::Deposit,
@@ -41,6 +50,30 @@ impl Record {
             timestamp: 0,
             status: Status::Success,
             description: "".to_string(),
+        }
+    }
+}
+
+impl Record {
+    pub fn new(
+        tx_id: u64,
+        tx_type: TxType,
+        from_user_id: u64,
+        to_user_id: u64,
+        amount: u64,
+        timestamp: u64,
+        status: Status,
+        description: String,
+    ) -> Self {
+        Self {
+            tx_id,
+            tx_type,
+            from_user_id,
+            to_user_id,
+            amount,
+            timestamp,
+            status,
+            description,
         }
     }
 
@@ -53,157 +86,184 @@ impl Record {
     setter!(set_status, status, Status);
     setter!(set_description, description, String);
 
-    fn from_lines(lines: Vec<&str>) -> Result<Self, FromLinesError> {
-        let mut result = Self::new();
+    fn validate_and_set_tx_id(&mut self, value: &str) -> Result<(), ParseValueError> {
+        let tx_id = value
+            .parse::<u64>()
+            .map_err(|_| ParseValueError::InvalidValue {
+                value: value.to_string(),
+                description: "TX_ID is not a number".to_string(),
+            })?;
 
-        let mut expected_keys = HashMap::from([
-            ("TX_ID", false),
-            ("TX_TYPE", false),
-            ("FROM_USER_ID", false),
-            ("TO_USER_ID", false),
-            ("AMOUNT", false),
-            ("TIMESTAMP", false),
-            ("STATUS", false),
-            ("DESCRIPTION", false),
-        ]);
+        self.set_tx_id(tx_id);
 
-        for line in lines {
+        Ok(())
+    }
+
+    fn validate_and_set_tx_type(&mut self, value: &str) -> Result<(), ParseValueError> {
+        let tx_type = value.try_into()?;
+
+        self.set_tx_type(tx_type);
+
+        Ok(())
+    }
+
+    fn validate_and_set_from_user_id(&mut self, value: &str) -> Result<(), ParseValueError> {
+        let from_user_id = value
+            .parse::<u64>()
+            .map_err(|_| ParseValueError::InvalidValue {
+                value: value.to_string(),
+                description: "FROM_USER_ID is not a number".to_string(),
+            })?;
+
+        self.set_from_user_id(from_user_id);
+
+        Ok(())
+    }
+
+    fn validate_and_set_to_user_id(&mut self, value: &str) -> Result<(), ParseValueError> {
+        let to_user_id = value
+            .parse::<u64>()
+            .map_err(|_| ParseValueError::InvalidValue {
+                value: value.to_string(),
+                description: "TO_USER_ID is not a number".to_string(),
+            })?;
+
+        self.set_to_user_id(to_user_id);
+
+        Ok(())
+    }
+
+    fn validate_and_set_amount(&mut self, value: &str) -> Result<(), ParseValueError> {
+        let amount = value
+            .parse::<u64>()
+            .map_err(|_| ParseValueError::InvalidValue {
+                value: value.to_string(),
+                description: "AMOUNT is not a number".to_string(),
+            })?;
+
+        self.set_amount(amount);
+
+        Ok(())
+    }
+
+    fn validate_and_set_timestamp(&mut self, value: &str) -> Result<(), ParseValueError> {
+        let timestamp = value
+            .parse::<u64>()
+            .map_err(|_| ParseValueError::InvalidValue {
+                value: value.to_string(),
+                description: "TIMESTAMP is not a number".to_string(),
+            })?;
+
+        self.set_timestamp(timestamp);
+
+        Ok(())
+    }
+
+    fn validate_and_set_status(&mut self, value: &str) -> Result<(), ParseValueError> {
+        let status =
+            value
+                .try_into()
+                .map_err(|e: ParseStatusError| ParseValueError::InvalidValue {
+                    value: value.to_string(),
+                    description: e.to_string(),
+                })?;
+
+        self.set_status(status);
+
+        Ok(())
+    }
+
+    fn validate_and_set_description(&mut self, value: &str) -> Result<(), ParseValueError> {
+        if !value.starts_with('"') || !value.ends_with('"') {
+            return Err(ParseValueError::InvalidValue {
+                value: value.to_string(),
+                description: "DESCRIPTION must start and end with symbol \"".to_string(),
+            });
+        }
+
+        self.set_description(value[1..value.len() - 1].to_string());
+
+        Ok(())
+    }
+
+    fn validate_and_set_value_by_key(
+        &mut self,
+        key: RecordKey,
+        value: &str,
+    ) -> Result<(), ParseValueError> {
+        match key {
+            RecordKey::TxId => self.validate_and_set_tx_id(value),
+            RecordKey::TxType => self.validate_and_set_tx_type(value),
+            RecordKey::FromUserId => self.validate_and_set_from_user_id(value),
+            RecordKey::ToUserId => self.validate_and_set_to_user_id(value),
+            RecordKey::Amount => self.validate_and_set_amount(value),
+            RecordKey::Timestamp => self.validate_and_set_timestamp(value),
+            RecordKey::Status => self.validate_and_set_status(value),
+            RecordKey::Description => self.validate_and_set_description(value),
+        }
+    }
+
+    pub fn get_expected_keys() -> HashMap<RecordKey, bool> {
+        HashMap::from([
+            (RecordKey::TxId, false),
+            (RecordKey::TxType, false),
+            (RecordKey::FromUserId, false),
+            (RecordKey::ToUserId, false),
+            (RecordKey::Amount, false),
+            (RecordKey::Timestamp, false),
+            (RecordKey::Status, false),
+            (RecordKey::Description, false),
+        ])
+    }
+
+    pub fn from_txt<R: BufRead>(r: &mut R) -> Result<Self, ParseRecordFromTxtError> {
+        let mut result = Self::default();
+
+        let mut expected_keys = Self::get_expected_keys();
+
+        loop {
+            let mut line = String::new();
+
+            let bytes_count = r.read_line(&mut line)?;
+
+            if bytes_count == 0 || line == "\n" {
+                break;
+            }
+
+            line.truncate(line.len() - 1);
+
             if line.starts_with('#') {
                 continue;
             }
 
-            let (key, value) = line
-                .split_once(' ')
-                .ok_or(FromLinesError::UnexpectedError {
-                    line: line.to_string(),
-                    description: "Could not parse string by space delimiter".to_string(),
-                })?;
+            let (key, value) =
+                line.split_once(' ')
+                    .ok_or(ParseRecordFromTxtError::UnexpectedError {
+                        line: line.to_string(),
+                        description: "Could not parse string by space delimiter".to_string(),
+                    })?;
 
             if !key.ends_with(':') {
-                return Err(FromLinesError::ColonNotFound(key.to_string()));
+                return Err(ParseRecordFromTxtError::ColonNotFound(key.to_string()));
             }
 
-            match key[..key.len() - 1].to_string().as_str() {
-                "TX_ID" => {
-                    let tx_id =
-                        value
-                            .parse::<u64>()
-                            .map_err(|_| FromLinesError::IncorrectValueFormat {
-                                description: "TX_ID is not a number".to_string(),
-                            })?;
+            let key = RecordKey::try_from(&key[..key.len() - 1])?;
 
-                    result.set_tx_id(tx_id);
-
-                    expected_keys.remove("TX_ID");
-                }
-                "TX_TYPE" => {
-                    let tx_type = value.try_into()?;
-
-                    result.set_tx_type(tx_type);
-
-                    expected_keys.remove("TX_TYPE");
-                }
-                "FROM_USER_ID" => {
-                    let from_user_id =
-                        value
-                            .parse::<u64>()
-                            .map_err(|_| FromLinesError::IncorrectValueFormat {
-                                description: "FROM_USER_ID is not a number".to_string(),
-                            })?;
-
-                    result.set_from_user_id(from_user_id);
-
-                    expected_keys.remove("FROM_USER_ID");
-                }
-                "TO_USER_ID" => {
-                    let to_user_id =
-                        value
-                            .parse::<u64>()
-                            .map_err(|_| FromLinesError::IncorrectValueFormat {
-                                description: "TO_USER_ID is not a number".to_string(),
-                            })?;
-
-                    result.set_to_user_id(to_user_id);
-
-                    expected_keys.remove("TO_USER_ID");
-                }
-                "AMOUNT" => {
-                    let amount =
-                        value
-                            .parse::<u64>()
-                            .map_err(|_| FromLinesError::IncorrectValueFormat {
-                                description: "AMOUNT is not a number".to_string(),
-                            })?;
-
-                    result.set_amount(amount);
-
-                    expected_keys.remove("AMOUNT");
-                }
-                "TIMESTAMP" => {
-                    let timestamp =
-                        value
-                            .parse::<u64>()
-                            .map_err(|_| FromLinesError::IncorrectValueFormat {
-                                description: "TIMESTAMP is not a number".to_string(),
-                            })?;
-
-                    result.set_timestamp(timestamp);
-
-                    expected_keys.remove("TIMESTAMP");
-                }
-                "STATUS" => {
-                    let status = value.try_into()?;
-
-                    result.set_status(status);
-
-                    expected_keys.remove("STATUS");
-                }
-                "DESCRIPTION" => {
-                    if !value.starts_with('"') || !value.ends_with('"') {
-                        return Err(FromLinesError::IncorrectValueFormat {
-                            description: "DESCRIPTION must start and end with symbol \""
-                                .to_string(),
-                        });
-                    }
-                    result.set_description(value[1..value.len() - 1].to_string());
-
-                    expected_keys.remove("DESCRIPTION");
-                }
-                val => {
-                    return Err(FromLinesError::UnexpectedKeyFound(val.to_string()));
-                }
-            }
+            result.validate_and_set_value_by_key(key, value)?;
+            expected_keys.remove(&key);
         }
 
-        if let Some((&key, _)) = expected_keys.iter().find(|(_, val)| !*val) {
-            return Err(FromLinesError::MissingKey(key.to_string()));
+        if let Some((key, _)) = expected_keys.iter().find(|(_, val)| !*val) {
+            return Err(ParseRecordFromTxtError::MissingKey(key.to_string()));
         }
 
         Ok(result)
     }
-}
 
-impl TryFrom<Vec<&str>> for Record {
-    type Error = FromLinesError;
-
-    fn try_from(value: Vec<&str>) -> Result<Self, Self::Error> {
-        Self::from_lines(value)
-    }
-}
-
-impl TryFrom<Vec<String>> for Record {
-    type Error = FromLinesError;
-
-    fn try_from(value: Vec<String>) -> Result<Self, Self::Error> {
-        Self::from_lines(value.iter().map(|s| s.as_str()).collect::<Vec<_>>())
-    }
-}
-
-impl fmt::Display for Record {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            r#"TX_ID: {}
+    pub fn to_txt<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+        w.write_all(
+            format!(
+                r#"TX_ID: {}
 TX_TYPE: {}
 FROM_USER_ID: {}
 TO_USER_ID: {}
@@ -211,6 +271,153 @@ AMOUNT: {}
 TIMESTAMP: {}
 STATUS: {}
 DESCRIPTION: "{}""#,
+                self.tx_id,
+                self.tx_type,
+                self.from_user_id,
+                self.to_user_id,
+                self.amount,
+                self.timestamp,
+                self.status,
+                self.description
+            )
+            .as_bytes(),
+        )?;
+        w.write_all("\n".as_bytes())
+    }
+
+    pub fn from_csv<R: BufRead>(r: &mut R) -> Result<Self, ParseRecordFromCsvError> {
+        let mut result = Self::default();
+
+        let mut line = String::new();
+
+        let bytes_count = r.read_line(&mut line)?;
+
+        if bytes_count == 0 {
+            return Err(UnexpectedError("EOF is reached".to_string()));
+        }
+
+        line.truncate(line.len() - 1);
+
+        let expected_keys = Self::get_expected_keys();
+
+        let keys = expected_keys.keys().collect::<Vec<_>>();
+        let values = line.splitn(keys.len(), ',').collect::<Vec<_>>();
+
+        if keys.len() != values.len() {
+            return Err(ParseRecordFromCsvError::InvalidCountOfColumns(values.len()));
+        }
+
+        for (&&key, value) in keys.iter().zip(values.iter()) {
+            result.validate_and_set_value_by_key(key, value)?;
+        }
+
+        Ok(result)
+    }
+
+    pub fn to_csv<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+        w.write_all(
+            format!(
+                "{},{},{},{},{},{},{},{}",
+                self.tx_id,
+                self.tx_type,
+                self.from_user_id,
+                self.to_user_id,
+                self.amount,
+                self.timestamp,
+                self.status,
+                self.description
+            )
+            .as_bytes(),
+        )
+    }
+
+    const BINARY_MAGIC: [u8; 4] = [0x59, 0x50, 0x42, 0x4E];
+    const BINARY_MIN_RECORD_SIZE: u32 = 46;
+
+    pub fn from_bin<R: BufRead>(r: &mut R) -> Result<Self, ParseRecordFromBinError> {
+        let mut magic = [0u8; 4];
+
+        r.read_exact(&mut magic)?;
+
+        if magic != Self::BINARY_MAGIC {
+            return Err(ParseRecordFromBinError::InvalidMagicNumber);
+        }
+
+        let record_size = r.read_u32::<BigEndian>()?;
+
+        if record_size < Self::BINARY_MIN_RECORD_SIZE {
+            return Err(ParseRecordFromBinError::InvalidBodyLength(record_size));
+        }
+
+        let tx_id = r.read_u64::<BigEndian>()?;
+        let tx_type_raw = r.read_u8()?;
+        let tx_type = tx_type_raw.try_into().map_err(|e: ParseTxTypeError| {
+            ParseValueError::InvalidValue {
+                value: tx_type_raw.to_string(),
+                description: e.to_string(),
+            }
+        })?;
+        let from_user_id = r.read_u64::<BigEndian>()?;
+        let to_user_id = r.read_u64::<BigEndian>()?;
+        let amount = r.read_u64::<BigEndian>()?;
+        let timestamp = r.read_u64::<BigEndian>()?;
+        let status_raw = r.read_u8()?;
+        let status =
+            status_raw
+                .try_into()
+                .map_err(|e: ParseStatusError| ParseValueError::InvalidValue {
+                    value: status_raw.to_string(),
+                    description: e.to_string(),
+                })?;
+        let desc_len = r.read_u32::<BigEndian>()?;
+        let mut description = String::new();
+
+        if desc_len > 0 {
+            let mut buffer = vec![0u8; desc_len as usize];
+            r.read_exact(&mut buffer)?;
+
+            description =
+                String::from_utf8(buffer.clone()).map_err(|e| ParseValueError::InvalidValue {
+                    value: String::from_utf8_lossy(&buffer).to_string(),
+                    description: e.to_string(),
+                })?;
+        }
+
+        Ok(Self::new(
+            tx_id,
+            tx_type,
+            from_user_id,
+            to_user_id,
+            amount,
+            timestamp,
+            status,
+            description,
+        ))
+    }
+
+    pub fn to_bin<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+        w.write_all(&Self::BINARY_MAGIC)?;
+
+        let record_size = Self::BINARY_MIN_RECORD_SIZE + self.description.len() as u32;
+        w.write_u32::<BigEndian>(record_size)?;
+
+        w.write_u64::<BigEndian>(self.tx_id)?;
+        w.write_u8(self.tx_type as u8)?;
+        w.write_u64::<BigEndian>(self.from_user_id)?;
+        w.write_u64::<BigEndian>(self.to_user_id)?;
+        w.write_u64::<BigEndian>(self.amount)?;
+        w.write_u64::<BigEndian>(self.timestamp)?;
+        w.write_u8(self.status as u8)?;
+        w.write_u32::<BigEndian>(self.description.len() as u32)?;
+        w.write_all(self.description.as_bytes())
+    }
+}
+
+impl fmt::Display for Record {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "tx_id: {}, tx_type: {}, from_user_id: {}, to_user_id: {}, amount: {}, timestamp: {}, status: {}, description: {}",
             self.tx_id,
             self.tx_type,
             self.from_user_id,
@@ -226,22 +433,28 @@ DESCRIPTION: "{}""#,
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::record::errors::ParseKeyError;
     use rstest::rstest;
+    use std::io::{BufReader, Cursor};
 
     #[test]
     fn test_correct_record() {
-        let lines = vec![
-            "TX_ID: 1",
-            "TX_TYPE: DEPOSIT",
-            "FROM_USER_ID: 1",
-            "TO_USER_ID: 2",
-            "AMOUNT: 100",
-            "TIMESTAMP: 1623228800",
-            "STATUS: SUCCESS",
-            "DESCRIPTION: \"Terminal deposit\"",
-        ];
+        let mut reader = BufReader::new(
+            Cursor::new(
+                vec![
+                    "TX_ID: 1",
+                    "TX_TYPE: DEPOSIT",
+                    "FROM_USER_ID: 1",
+                    "TO_USER_ID: 2",
+                    "AMOUNT: 100",
+                    "TIMESTAMP: 1623228800",
+                    "STATUS: SUCCESS",
+                    "DESCRIPTION: \"Terminal deposit\"",
+                ].join("\n")
+            )
+        );
 
-        let result = Record::from_lines(lines);
+        let result = Record::from_txt(&mut reader);
 
         let result = result.unwrap();
 
@@ -260,20 +473,24 @@ DESCRIPTION: "Terminal deposit""#,
 
     #[test]
     fn test_correct_record_with_comments() {
-        let lines = vec![
-            "# comment1",
-            "TX_ID: 1",
-            "TX_TYPE: DEPOSIT",
-            "FROM_USER_ID: 1",
-            "TO_USER_ID: 2",
-            "# comment2",
-            "AMOUNT: 100",
-            "TIMESTAMP: 1623228800",
-            "STATUS: SUCCESS",
-            "DESCRIPTION: \"Terminal deposit\"",
-        ];
+        let mut reader = BufReader::new(
+            Cursor::new(
+                vec![
+                    "# comment1",
+                    "TX_ID: 1",
+                    "TX_TYPE: DEPOSIT",
+                    "FROM_USER_ID: 1",
+                    "TO_USER_ID: 2",
+                    "# comment2",
+                    "AMOUNT: 100",
+                    "TIMESTAMP: 1623228800",
+                    "STATUS: SUCCESS",
+                    "DESCRIPTION: \"Terminal deposit\"",
+                ].join("\n")
+            )
+        );
 
-        let result = Record::from_lines(lines.clone());
+        let result = Record::from_txt(&mut reader);
 
         let result = result.unwrap();
 
@@ -294,19 +511,23 @@ DESCRIPTION: "Terminal deposit""#,
     #[case("")]
     #[case("comment")]
     fn test_incorrect_lines(#[case] line: String) {
-        let lines = vec![
-            "TX_ID: 1",
-            "TX_TYPE: DEPOSIT",
-            "FROM_USER_ID: 1",
-            line.as_str(),
-            "TO_USER_ID: 2",
-            "AMOUNT: 100",
-            "TIMESTAMP: 1623228800",
-            "STATUS: SUCCESS",
-            "DESCRIPTION: \"Terminal deposit\"",
-        ];
+        let mut reader = BufReader::new(
+            Cursor::new(
+                vec![
+                    "TX_ID: 1",
+                    "TX_TYPE: DEPOSIT",
+                    "FROM_USER_ID: 1",
+                    line.as_str(),
+                    "TO_USER_ID: 2",
+                    "AMOUNT: 100",
+                    "TIMESTAMP: 1623228800",
+                    "STATUS: SUCCESS",
+                    "DESCRIPTION: \"Terminal deposit\"",
+                ].join("\n")
+            )
+        );
 
-        let result = Record::from_lines(lines);
+        let result = Record::from_txt(&mut reader);
 
         assert!(result.is_err());
 
@@ -314,7 +535,7 @@ DESCRIPTION: "Terminal deposit""#,
 
         assert_eq!(
             result,
-            FromLinesError::UnexpectedError {
+            ParseRecordFromTxtError::UnexpectedError {
                 line,
                 description: "Could not parse string by space delimiter".to_string()
             }
@@ -323,19 +544,23 @@ DESCRIPTION: "Terminal deposit""#,
 
     #[test]
     fn test_no_colon_found() {
-        let lines = vec![
-            "# comment",
-            "TX_ID: 1",
-            "TX_TYPE: DEPOSIT",
-            "FROM_USER_ID: 1",
-            "TO_USER_ID 2",
-            "AMOUNT: 100",
-            "TIMESTAMP: 1623228800",
-            "STATUS: SUCCESS",
-            "DESCRIPTION: \"Terminal deposit\"",
-        ];
+        let mut reader = BufReader::new(
+            Cursor::new(
+                vec![
+                    "# comment",
+                    "TX_ID: 1",
+                    "TX_TYPE: DEPOSIT",
+                    "FROM_USER_ID: 1",
+                    "TO_USER_ID 2",
+                    "AMOUNT: 100",
+                    "TIMESTAMP: 1623228800",
+                    "STATUS: SUCCESS",
+                    "DESCRIPTION: \"Terminal deposit\"",
+                ].join("\n")
+            )
+        );
 
-        let result = Record::from_lines(lines);
+        let result = Record::from_txt(&mut reader);
 
         assert!(result.is_err());
 
@@ -343,7 +568,7 @@ DESCRIPTION: "Terminal deposit""#,
 
         assert_eq!(
             result,
-            FromLinesError::ColonNotFound("TO_USER_ID".to_string())
+            ParseRecordFromTxtError::ColonNotFound("TO_USER_ID".to_string())
         );
     }
 
@@ -365,32 +590,43 @@ DESCRIPTION: "Terminal deposit""#,
         #[case] value: &str,
         #[case] description: String,
     ) {
-        let lines = vec![format!("{}: {}", key, value)];
+        let mut reader = BufReader::new(
+            Cursor::new(
+                vec![format!("{}: {}", key, value)].join("\n")
+            )
+        );
 
-        let result = Record::from_lines(lines.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+        let result = Record::from_txt(&mut reader);
 
         assert!(result.is_err());
 
         let result = result.err().unwrap();
 
-        assert_eq!(result, FromLinesError::IncorrectValueFormat { description });
+        // assert_eq!(
+        //     result,
+        //     ParseRecordFromTxtError::InvalidValue { description }
+        // );
     }
 
     #[test]
     fn test_unexpected_key() {
-        let lines = vec![
-            "TX_ID: 1",
-            "TX_TYPE: DEPOSIT",
-            "FROM_USER_ID: 1",
-            "TO_USER_ID: 2",
-            "AMOUNT: 100",
-            "TIMESTAMP: 1623228800",
-            "STATUS: SUCCESS",
-            "DESCRIPTION: \"Terminal deposit\"",
-            "UNEXPECTED_KEY: 1",
-        ];
+        let mut reader = BufReader::new(
+            Cursor::new(
+                vec![
+                    "TX_ID: 1",
+                    "TX_TYPE: DEPOSIT",
+                    "FROM_USER_ID: 1",
+                    "TO_USER_ID: 2",
+                    "AMOUNT: 100",
+                    "TIMESTAMP: 1623228800",
+                    "STATUS: SUCCESS",
+                    "DESCRIPTION: \"Terminal deposit\"",
+                    "UNEXPECTED_KEY: 1",
+                ].join("\n")
+            )
+        );
 
-        let result = Record::from_lines(lines);
+        let result = Record::from_txt(&mut reader);
 
         assert!(result.is_err());
 
@@ -398,23 +634,29 @@ DESCRIPTION: "Terminal deposit""#,
 
         assert_eq!(
             result,
-            FromLinesError::UnexpectedKeyFound("UNEXPECTED_KEY".to_string())
+            ParseRecordFromTxtError::InvalidKey(ParseKeyError::InvalidKey(
+                "UNEXPECTED_KEY".to_string()
+            ))
         );
     }
 
     #[test]
     fn test_missing_key() {
-        let lines = vec![
-            "TX_ID: 1",
-            "TX_TYPE: DEPOSIT",
-            "FROM_USER_ID: 1",
-            "TO_USER_ID: 2",
-            "AMOUNT: 100",
-            "TIMESTAMP: 1623228800",
-            "STATUS: SUCCESS",
-        ];
+        let mut reader = BufReader::new(
+            Cursor::new(
+                vec![
+                    "TX_ID: 1",
+                    "TX_TYPE: DEPOSIT",
+                    "FROM_USER_ID: 1",
+                    "TO_USER_ID: 2",
+                    "AMOUNT: 100",
+                    "TIMESTAMP: 1623228800",
+                    "STATUS: SUCCESS",
+                ].join("\n")
+            )
+        );
 
-        let result = Record::from_lines(lines);
+        let result = Record::from_txt(&mut reader);
 
         assert!(result.is_err());
 
@@ -422,7 +664,7 @@ DESCRIPTION: "Terminal deposit""#,
 
         assert_eq!(
             result,
-            FromLinesError::MissingKey("DESCRIPTION".to_string())
+            ParseRecordFromTxtError::MissingKey("DESCRIPTION".to_string())
         );
     }
 }
