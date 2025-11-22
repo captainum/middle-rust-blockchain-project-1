@@ -3,82 +3,66 @@ mod record;
 
 use record::Record;
 
-use std::io::{BufRead, BufReader, BufWriter, Write, Read};
 use errors::{ReadError, WriteError};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 
-trait YPBankRecord {
-    fn from_read<R: Read>(r: &mut R) -> Result<Self, ReadError>
+use parser_macro::ReadWrite;
+
+trait YPBank {
+    fn read_from<R: Read>(r: &mut R) -> Result<Self, ReadError>
     where
         Self: Sized;
 
     fn write_to<W: Write>(&self, w: &mut W) -> Result<(), WriteError>;
 }
 
-struct YPBankTextRecord {
+#[derive(ReadWrite)]
+#[format("text")]
+struct YPBankText {
     records: Vec<Record>,
 }
 
-impl YPBankRecord for YPBankTextRecord {
-    fn from_read<R: Read>(r: &mut R) -> Result<Self, ReadError> {
-        let reader = BufReader::new(r);
+#[derive(ReadWrite)]
+#[format("csv")]
+struct YPBankCsv {
+    records: Vec<Record>,
+}
 
-        let lines = reader.lines();
-
-        let mut record_lines = vec![];
-
-        let mut records: Vec<Record> = vec![];
-
-        for line in lines {
-            if let Ok(line) = line {
-                if line.len() > 0 {
-                    record_lines.push(line);
-                } else if record_lines.len() > 0 {
-                    let record = Record::try_from(record_lines)?;
-                    records.push(record);
-
-                    record_lines = vec![];
-                }
-            } else {
-                return Err(ReadError::UnexpectedError(
-                    "could not parse line".to_string(),
-                ));
-            }
-        }
-
-        if record_lines.len() > 0 {
-            let record = Record::try_from(record_lines)?;
-            records.push(record);
-        }
-
-        Ok(Self { records })
+impl YPBankCsv {
+    fn prepare_header() -> String {
+        Record::get_expected_keys()
+            .keys()
+            .map(|key| key.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
     }
 
-    fn write_to<W: Write>(&self, w: &mut W) -> Result<(), WriteError> {
-        let mut writer = BufWriter::new(w);
+    fn validate_header(header: &str) -> Result<(), ReadError> {
+        let expected_header = Self::prepare_header();
 
-        for (i, record) in self.records.iter().enumerate() {
-            if i > 0 {
-                writer.write_all(b"\n")?;
-            }
-            writer.write_all(record.to_string().as_bytes())?;
-            writer.write_all(b"\n")?;
+        if header != expected_header {
+            Err(ReadError::InvalidFormat(
+                "invalid header structure".to_string(),
+            ))
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 }
 
-struct YPBankCsvHeader {}
-
-struct YPBankBinaryRecord {}
+#[derive(ReadWrite)]
+#[format("bin")]
+struct YPBankBin {
+    records: Vec<Record>,
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Cursor;
 
-    use crate::record::status::{Status};
-    use crate::record::tx_type::{TxType};
+    use crate::record::status::Status;
+    use crate::record::tx_type::TxType;
 
     #[test]
     fn test_data_from_specification() {
@@ -113,7 +97,7 @@ STATUS: SUCCESS
 DESCRIPTION: "User withdrawal"
 "#;
         let mut cursor = Cursor::new(data);
-        let result = YPBankTextRecord::from_read(&mut cursor);
+        let result = YPBankText::read_from(&mut cursor);
 
         let record = result.unwrap();
 
@@ -122,7 +106,7 @@ DESCRIPTION: "User withdrawal"
 
     #[test]
     fn test_write_empty_txt_record() {
-        let record = YPBankTextRecord { records: vec![] };
+        let record = YPBankText { records: vec![] };
         let mut cursor = Cursor::new(vec![]);
         record.write_to(&mut cursor).unwrap();
         assert_eq!(cursor.into_inner(), b"");
@@ -131,17 +115,17 @@ DESCRIPTION: "User withdrawal"
     #[test]
     fn test_write_txt_records() {
         let records = vec![
-            Record::new()
-                .set_tx_id(1234567890123456)
-                .set_tx_type(TxType::Deposit)
-                .set_from_user_id(0)
-                .set_to_user_id(9876543210987654)
-                .set_amount(10000)
-                .set_timestamp(1633036800000)
-                .set_status(Status::Success)
-                .set_description("Terminal deposit".to_string())
-                .clone(),
-            Record::new()
+            Record::new(
+                1234567890123456,
+                TxType::Deposit,
+                0,
+                9876543210987654,
+                10000,
+                1633036800000,
+                Status::Success,
+                "Terminal deposit".to_string(),
+            ).clone(),
+            Record::default()
                 .set_tx_id(2312321321321321)
                 .set_timestamp(1633056800000)
                 .set_status(Status::Failure)
@@ -151,7 +135,7 @@ DESCRIPTION: "User withdrawal"
                 .set_amount(1000)
                 .set_description("User transfer".to_string())
                 .clone(),
-            Record::new()
+            Record::default()
                 .set_tx_id(3213213213213213)
                 .set_amount(100)
                 .set_tx_type(TxType::Withdrawal)
@@ -163,7 +147,7 @@ DESCRIPTION: "User withdrawal"
                 .clone(),
         ];
 
-        let record = YPBankTextRecord { records };
+        let record = YPBankText { records };
         let mut cursor = Cursor::new(vec![]);
         record.write_to(&mut cursor).unwrap();
         assert_eq!(
