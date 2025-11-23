@@ -1,14 +1,24 @@
+//! Модуль описания возможных типов транзакции.
+
 use super::errors::ParseTxTypeError;
 use std::fmt;
 
+/// Тип транзакции.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TxType {
+    /// Депозит.
     Deposit,
+
+    /// Перевод.
     Transfer,
+
+    /// Обналичивание.
     Withdrawal,
 }
 
+/// Реализация трейта [`fmt::Display`] для [`TxType`].
 impl fmt::Display for TxType {
+    /// Реализация метода [`fmt::Display::fmt`] для [`TxType`].
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Self::Deposit => "DEPOSIT",
@@ -20,9 +30,12 @@ impl fmt::Display for TxType {
     }
 }
 
+/// Реализация трейта [`TryFrom<&str>`] для [`TxType`].
 impl TryFrom<&str> for TxType {
+    /// Ошибка парсинга типа транзакции.
     type Error = ParseTxTypeError;
 
+    /// Реализация метода [`TryFrom<&str>::try_from`] для [`TxType`].
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "DEPOSIT" => Ok(Self::Deposit),
@@ -33,9 +46,12 @@ impl TryFrom<&str> for TxType {
     }
 }
 
+/// Реализация трейта [`TryFrom<u8>`] для [`TxType`].
 impl TryFrom<u8> for TxType {
+    /// Ошибка парсинга типа транзакции.
     type Error = ParseTxTypeError;
 
+    /// Реализация метода [`TryFrom<u8>::try_from`] для [`TxType`].
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::Deposit),
@@ -46,7 +62,9 @@ impl TryFrom<u8> for TxType {
     }
 }
 
+/// Реализация трейта [`From<TxType>`] для [`u8`].
 impl From<TxType> for u8 {
+    /// Реализация метода [`From<TxType>::from`] для [`u8`].
     fn from(value: TxType) -> Self {
         match value {
             TxType::Deposit => 0,

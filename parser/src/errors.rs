@@ -1,5 +1,5 @@
 use super::record::errors::{
-    ParseRecordFromBinError, ParseRecordFromCsvError, ParseRecordFromTxtError, WriteRecordError,
+    ParseRecordFromBinError, ParseRecordFromCsvError, ParseRecordFromTxtError,
 };
 use thiserror::Error;
 
@@ -37,18 +37,10 @@ impl From<std::io::Error> for ReadError {
 
 #[derive(Debug, Error)]
 pub enum WriteError {
-    #[error("Write record error: {0}")]
-    WriteRecordError(WriteRecordError),
     #[error("Write header error: {0}")]
     WriteHeaderError(String),
     #[error("Unexpected error: {0}")]
     UnexpectedError(String),
-}
-
-impl From<WriteRecordError> for WriteError {
-    fn from(e: WriteRecordError) -> Self {
-        Self::WriteRecordError(e)
-    }
 }
 
 impl From<std::io::Error> for WriteError {

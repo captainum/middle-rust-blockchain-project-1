@@ -1,19 +1,41 @@
+//! Модуль описания возможных ключей поля записи о транзакции.
+
 use super::errors::ParseKeyError;
 use std::fmt;
 
+/// Ключ поля записи о транзакции.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum RecordKey {
+    /// Неотрицательное целое число, идентифицирующее транзакцию.
     TxId,
+
+    /// Тип транзакции.
     TxType,
+
+    /// Неотрицательное целое число, идентифицирующее отправитель счета
+    /// (0 для типа транзакции `Deposit`).
     FromUserId,
+
+    /// Неотрицательное целое число, идентифицирующее получателя счета
+    /// (0 для типа транзакции `Withdrawal`).
     ToUserId,
+
+    /// Неотрицательное целое число, представляющее сумму в наименьшей единице валюты.
     Amount,
+
+    /// Unix epoch timestamp в миллисекундах.
     Timestamp,
+
+    /// Состояние транзакции.
     Status,
+
+    /// Произвольное текстовое описание.
     Description,
 }
 
+/// Реализация трейта [`fmt::Display`] для [`RecordKey`].
 impl fmt::Display for RecordKey {
+    /// Реализация метода [`fmt::Display::fmt`] для [`RecordKey`].
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Self::TxId => "TX_ID",
@@ -30,9 +52,12 @@ impl fmt::Display for RecordKey {
     }
 }
 
+/// Реализация трейта [`TryFrom<&str>`] для [`RecordKey`].
 impl TryFrom<&str> for RecordKey {
+    /// Ошибка парсинга ключа поля записи о транзакции.
     type Error = ParseKeyError;
 
+    /// Реализация метода [`TryFrom<&str>::try_from`] для [`RecordKey`].
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         match s {
             "TX_ID" => Ok(Self::TxId),

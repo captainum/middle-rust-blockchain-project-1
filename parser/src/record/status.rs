@@ -1,15 +1,24 @@
-use super::errors::{ParseStatusError, ParseTxTypeError};
-use crate::record::tx_type::TxType;
+//! Модуль описания возможных состояний транзакции.
+
+use super::errors::ParseStatusError;
 use std::fmt;
 
+/// Состояние транзакции.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Status {
+    /// Успех.
     Success,
+
+    /// Неудача.
     Failure,
+
+    /// В процессе.
     Pending,
 }
 
+/// Реализация трейта [`fmt::Display`] для [`Status`].
 impl fmt::Display for Status {
+    /// Реализация метода [`fmt::Display::fmt`] для [`Status`].
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Self::Success => "SUCCESS",
@@ -21,9 +30,12 @@ impl fmt::Display for Status {
     }
 }
 
+/// Реализация трейта [`TryFrom<&str>`] для [`Status`].
 impl TryFrom<&str> for Status {
+    /// Ошибка парсинга состояния транзакции.
     type Error = ParseStatusError;
 
+    /// Реализация метода [`TryFrom<&str>::try_from`] для [`Status`].
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         match s {
             "SUCCESS" => Ok(Self::Success),
@@ -34,9 +46,12 @@ impl TryFrom<&str> for Status {
     }
 }
 
+/// Реализация трейта [`TryFrom<u8>`] для [`Status`].
 impl TryFrom<u8> for Status {
+    /// Ошибка парсинга состояния транзакции.
     type Error = ParseStatusError;
 
+    /// Реализация метода [`TryFrom<u8>::try_from`] для [`Status`].
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0 => Ok(Self::Success),
@@ -47,7 +62,9 @@ impl TryFrom<u8> for Status {
     }
 }
 
+/// Реализация трейта [`From<Status>`] для [`u8`].
 impl From<Status> for u8 {
+    /// Реализация метода [`From<Status>::from`] для [`u8`].
     fn from(value: Status) -> Self {
         match value {
             Status::Success => 0,

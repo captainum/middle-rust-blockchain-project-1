@@ -1,3 +1,20 @@
+//! Библиотека, обеспечивающая парсинг и сериализацию форматов.
+//!
+//! Доступны операции чтения и записи данных о банковских операциях в форматах:
+//! 1. [`YPBankCsv`] - таблица банковских операций;
+//!
+//! 2. [`YPBankText`] - текстовый формат описания списка операций;
+//!
+//! 3. [`YPBankBin`] - бинарное предоставление списка операций.
+//!
+//! Все указанные структуры данных реализуют трейт [`YPBank`], описывающий общее поведение.
+//!
+//! Чтение из источника данных, реализующего трейт [`Read`], производится при помощи
+//! метода [`read_from`].
+//!
+//! Запись производится в назначение, реализующее трейт [`Write`], при помощи
+//! метода ['write_to'].
+
 mod errors;
 mod record;
 
@@ -8,35 +25,50 @@ use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 
 use parser_macro::ReadWrite;
 
+/// Трейт для парсинга данных о банковских операциях.
 trait YPBank {
+    /// Считать данные о банковских операциях из указанного источника.
     fn read_from<R: Read>(r: &mut R) -> Result<Self, ReadError>
     where
         Self: Sized;
 
+    /// Записать данные о банковских операциях в указанное место.
     fn write_to<W: Write>(&self, w: &mut W) -> Result<(), WriteError>;
 }
 
+/// Структура хранения данных о банковских операциях из источника данных,
+/// имеющего текстовый формат.
 #[derive(ReadWrite)]
 #[format("text")]
 struct YPBankText {
+    /// Записи о банковских операциях.
     records: Vec<Record>,
 }
 
+/// Структура хранения данных о банковских операциях из источника данных,
+/// имеющего CSV формат.
 #[derive(ReadWrite)]
 #[format("csv")]
 struct YPBankCsv {
+    /// Записи о банковских операциях.
     records: Vec<Record>,
 }
 
 impl YPBankCsv {
+    /// Подготовить заголовок с именами полей.
+    ///
+    /// Заголовок соответствует следующей строке:
+    ///
+    /// TX_ID,TX_TYPE,FROM_USER_ID,TO_USER_ID,AMOUNT,TIMESTAMP,STATUS,DESCRIPTION
     fn prepare_header() -> String {
-        Record::get_expected_keys()
-            .keys()
+        Record::EXPECTED_KEYS
+            .iter()
             .map(|key| key.to_string())
             .collect::<Vec<_>>()
             .join(",")
     }
 
+    /// Валидировать переданный заголовок на соответствие ожидаемой структуре.
     fn validate_header(header: &str) -> Result<(), ReadError> {
         let expected_header = Self::prepare_header();
 
@@ -50,9 +82,12 @@ impl YPBankCsv {
     }
 }
 
+/// Структура хранения данных о банковских операциях из источника данных,
+/// имеющего бинарный формат.
 #[derive(ReadWrite)]
 #[format("bin")]
 struct YPBankBin {
+    /// Записи о банковских операциях.
     records: Vec<Record>,
 }
 
@@ -124,7 +159,8 @@ DESCRIPTION: "User withdrawal"
                 1633036800000,
                 Status::Success,
                 "Terminal deposit".to_string(),
-            ).clone(),
+            )
+            .clone(),
             Record::default()
                 .set_tx_id(2312321321321321)
                 .set_timestamp(1633056800000)

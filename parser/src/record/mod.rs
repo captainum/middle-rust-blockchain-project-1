@@ -1,3 +1,5 @@
+//! Модуль описания записи о транзакции.
+
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{BufRead, Write};
@@ -15,21 +17,39 @@ use keys::RecordKey;
 use status::Status;
 use tx_type::TxType;
 
-use crate::record::errors::ParseRecordFromCsvError::UnexpectedError;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 
+/// Структура хранения данных записи о транзакции.
 #[derive(Debug, Clone)]
 pub struct Record {
+    /// Неотрицательное целое число, идентифицирующее транзакцию.
     tx_id: u64,
+
+    /// Тип транзакции.
     tx_type: TxType,
+
+    /// Неотрицательное целое число, идентифицирующее отправитель счета
+    /// (0 для типа транзакции `Deposit`).
     from_user_id: u64,
+
+    /// Неотрицательное целое число, идентифицирующее получателя счета
+    /// (0 для типа транзакции `Withdrawal`).
     to_user_id: u64,
+
+    /// Неотрицательное целое число, представляющее сумму в наименьшей единице валюты.
     amount: u64,
+
+    /// Unix epoch timestamp в миллисекундах.
     timestamp: u64,
+
+    /// Состояние транзакции.
     status: Status,
+
+    /// Произвольное текстовое описание.
     description: String,
 }
 
+/// Макрос установки заданного поля записи о транзакции.
 macro_rules! setter {
     ($name:ident, $field:ident, $type:ty) => {
         pub fn $name(&mut self, $field: $type) -> &mut Self {
@@ -39,7 +59,9 @@ macro_rules! setter {
     };
 }
 
+/// Реализаций трейта [`Default`] для [`Record`].
 impl Default for Record {
+    /// Реализация метода [`Default::default`] для [`Record`].
     fn default() -> Self {
         Self {
             tx_id: 0,
@@ -55,6 +77,19 @@ impl Default for Record {
 }
 
 impl Record {
+    /// Получить ожидаемые поля записи транзакции по их ключам.
+    pub const EXPECTED_KEYS: [RecordKey; 8] = [
+        RecordKey::TxId,
+        RecordKey::TxType,
+        RecordKey::FromUserId,
+        RecordKey::ToUserId,
+        RecordKey::Amount,
+        RecordKey::Timestamp,
+        RecordKey::Status,
+        RecordKey::Description,
+    ];
+
+    /// Создание нового объекта записи о транзакции на основе переданных данных.
     pub fn new(
         tx_id: u64,
         tx_type: TxType,
@@ -86,6 +121,7 @@ impl Record {
     setter!(set_status, status, Status);
     setter!(set_description, description, String);
 
+    /// Валидация и установка значения идентификатора транзакции.
     fn validate_and_set_tx_id(&mut self, value: &str) -> Result<(), ParseValueError> {
         let tx_id = value
             .parse::<u64>()
@@ -99,6 +135,7 @@ impl Record {
         Ok(())
     }
 
+    /// Валидация и установка значения типа транзакции.
     fn validate_and_set_tx_type(&mut self, value: &str) -> Result<(), ParseValueError> {
         let tx_type = value.try_into()?;
 
@@ -107,6 +144,7 @@ impl Record {
         Ok(())
     }
 
+    /// Валидация и установка значения идентификатора отправителя счета транзакции.
     fn validate_and_set_from_user_id(&mut self, value: &str) -> Result<(), ParseValueError> {
         let from_user_id = value
             .parse::<u64>()
@@ -120,6 +158,7 @@ impl Record {
         Ok(())
     }
 
+    /// Валидация и установка значения идентификатора получателя счета транзакции.
     fn validate_and_set_to_user_id(&mut self, value: &str) -> Result<(), ParseValueError> {
         let to_user_id = value
             .parse::<u64>()
@@ -133,6 +172,7 @@ impl Record {
         Ok(())
     }
 
+    /// Валидация и установка значения суммы транзакции.
     fn validate_and_set_amount(&mut self, value: &str) -> Result<(), ParseValueError> {
         let amount = value
             .parse::<u64>()
@@ -146,6 +186,7 @@ impl Record {
         Ok(())
     }
 
+    /// Валидация и установка значения timestamp транзакции.
     fn validate_and_set_timestamp(&mut self, value: &str) -> Result<(), ParseValueError> {
         let timestamp = value
             .parse::<u64>()
@@ -159,6 +200,7 @@ impl Record {
         Ok(())
     }
 
+    /// Валидация и установка значения состояния транзакции.
     fn validate_and_set_status(&mut self, value: &str) -> Result<(), ParseValueError> {
         let status =
             value
@@ -173,6 +215,7 @@ impl Record {
         Ok(())
     }
 
+    /// Валидация и установка значения произвольного текстового описания транзакции.
     fn validate_and_set_description(&mut self, value: &str) -> Result<(), ParseValueError> {
         if !value.starts_with('"') || !value.ends_with('"') {
             return Err(ParseValueError::InvalidValue {
@@ -186,6 +229,7 @@ impl Record {
         Ok(())
     }
 
+    /// Валидация и установка значения поля записи транзакции по его ключу.
     fn validate_and_set_value_by_key(
         &mut self,
         key: RecordKey,
@@ -203,23 +247,14 @@ impl Record {
         }
     }
 
-    pub fn get_expected_keys() -> HashMap<RecordKey, bool> {
-        HashMap::from([
-            (RecordKey::TxId, false),
-            (RecordKey::TxType, false),
-            (RecordKey::FromUserId, false),
-            (RecordKey::ToUserId, false),
-            (RecordKey::Amount, false),
-            (RecordKey::Timestamp, false),
-            (RecordKey::Status, false),
-            (RecordKey::Description, false),
-        ])
-    }
-
-    pub fn from_txt<R: BufRead>(r: &mut R) -> Result<Self, ParseRecordFromTxtError> {
+    /// Считать данные о транзакции из указанного источника, имеющего текстовый формат записи.
+    pub fn from_text<R: BufRead>(r: &mut R) -> Result<Self, ParseRecordFromTxtError> {
         let mut result = Self::default();
 
-        let mut expected_keys = Self::get_expected_keys();
+        let mut expected_keys = Self::EXPECTED_KEYS
+            .iter()
+            .map(|&k| (k, false))
+            .collect::<HashMap<_, _>>();
 
         loop {
             let mut line = String::new();
@@ -238,10 +273,10 @@ impl Record {
 
             let (key, value) =
                 line.split_once(' ')
-                    .ok_or(ParseRecordFromTxtError::UnexpectedError {
-                        line: line.to_string(),
-                        description: "Could not parse string by space delimiter".to_string(),
-                    })?;
+                    .ok_or(ParseRecordFromTxtError::UnexpectedError(format!(
+                        "Could not parse string by space delimiter: {}",
+                        line
+                    )))?;
 
             if !key.ends_with(':') {
                 return Err(ParseRecordFromTxtError::ColonNotFound(key.to_string()));
@@ -260,7 +295,8 @@ impl Record {
         Ok(result)
     }
 
-    pub fn to_txt<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
+    /// Записать данные о транзакции в указанное место в текстовом формате.
+    pub fn to_text<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
         w.write_all(
             format!(
                 r#"TX_ID: {}
@@ -285,6 +321,7 @@ DESCRIPTION: "{}""#,
         w.write_all("\n".as_bytes())
     }
 
+    /// Считать данные о транзакции из указанного источника, имеющего CSV формат записи.
     pub fn from_csv<R: BufRead>(r: &mut R) -> Result<Self, ParseRecordFromCsvError> {
         let mut result = Self::default();
 
@@ -293,27 +330,29 @@ DESCRIPTION: "{}""#,
         let bytes_count = r.read_line(&mut line)?;
 
         if bytes_count == 0 {
-            return Err(UnexpectedError("EOF is reached".to_string()));
+            return Err(ParseRecordFromCsvError::UnexpectedError(
+                "EOF is reached".to_string(),
+            ));
         }
 
         line.truncate(line.len() - 1);
 
-        let expected_keys = Self::get_expected_keys();
+        let values = line
+            .splitn(Self::EXPECTED_KEYS.len(), ',')
+            .collect::<Vec<_>>();
 
-        let keys = expected_keys.keys().collect::<Vec<_>>();
-        let values = line.splitn(keys.len(), ',').collect::<Vec<_>>();
-
-        if keys.len() != values.len() {
+        if Self::EXPECTED_KEYS.len() != values.len() {
             return Err(ParseRecordFromCsvError::InvalidCountOfColumns(values.len()));
         }
 
-        for (&&key, value) in keys.iter().zip(values.iter()) {
+        for (&key, value) in Self::EXPECTED_KEYS.iter().zip(values.iter()) {
             result.validate_and_set_value_by_key(key, value)?;
         }
 
         Ok(result)
     }
 
+    /// Записать данные о транзакции в указанное место в CSV формате.
     pub fn to_csv<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
         w.write_all(
             format!(
@@ -334,6 +373,7 @@ DESCRIPTION: "{}""#,
     const BINARY_MAGIC: [u8; 4] = [0x59, 0x50, 0x42, 0x4E];
     const BINARY_MIN_RECORD_SIZE: u32 = 46;
 
+    /// Считать данные о транзакции из указанного источника, имеющего бинарный формат записи.
     pub fn from_bin<R: BufRead>(r: &mut R) -> Result<Self, ParseRecordFromBinError> {
         let mut magic = [0u8; 4];
 
@@ -346,7 +386,7 @@ DESCRIPTION: "{}""#,
         let record_size = r.read_u32::<BigEndian>()?;
 
         if record_size < Self::BINARY_MIN_RECORD_SIZE {
-            return Err(ParseRecordFromBinError::InvalidBodyLength(record_size));
+            return Err(ParseRecordFromBinError::InvalidRecordSize(record_size));
         }
 
         let tx_id = r.read_u64::<BigEndian>()?;
@@ -395,6 +435,7 @@ DESCRIPTION: "{}""#,
         ))
     }
 
+    /// Записать данные о транзакции в указанное место в бинарном формате.
     pub fn to_bin<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
         w.write_all(&Self::BINARY_MAGIC)?;
 
@@ -413,7 +454,9 @@ DESCRIPTION: "{}""#,
     }
 }
 
+/// Реализация трейта [`fmt::Display`] для [`Record`].
 impl fmt::Display for Record {
+    /// Реализация метода [`fmt::Display::fmt`] для [`Record`].
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -439,22 +482,21 @@ mod tests {
 
     #[test]
     fn test_correct_record() {
-        let mut reader = BufReader::new(
-            Cursor::new(
-                vec![
-                    "TX_ID: 1",
-                    "TX_TYPE: DEPOSIT",
-                    "FROM_USER_ID: 1",
-                    "TO_USER_ID: 2",
-                    "AMOUNT: 100",
-                    "TIMESTAMP: 1623228800",
-                    "STATUS: SUCCESS",
-                    "DESCRIPTION: \"Terminal deposit\"",
-                ].join("\n")
-            )
-        );
+        let mut reader = BufReader::new(Cursor::new(
+            vec![
+                "TX_ID: 1",
+                "TX_TYPE: DEPOSIT",
+                "FROM_USER_ID: 1",
+                "TO_USER_ID: 2",
+                "AMOUNT: 100",
+                "TIMESTAMP: 1623228800",
+                "STATUS: SUCCESS",
+                "DESCRIPTION: \"Terminal deposit\"",
+            ]
+            .join("\n"),
+        ));
 
-        let result = Record::from_txt(&mut reader);
+        let result = Record::from_text(&mut reader);
 
         let result = result.unwrap();
 
@@ -473,24 +515,23 @@ DESCRIPTION: "Terminal deposit""#,
 
     #[test]
     fn test_correct_record_with_comments() {
-        let mut reader = BufReader::new(
-            Cursor::new(
-                vec![
-                    "# comment1",
-                    "TX_ID: 1",
-                    "TX_TYPE: DEPOSIT",
-                    "FROM_USER_ID: 1",
-                    "TO_USER_ID: 2",
-                    "# comment2",
-                    "AMOUNT: 100",
-                    "TIMESTAMP: 1623228800",
-                    "STATUS: SUCCESS",
-                    "DESCRIPTION: \"Terminal deposit\"",
-                ].join("\n")
-            )
-        );
+        let mut reader = BufReader::new(Cursor::new(
+            vec![
+                "# comment1",
+                "TX_ID: 1",
+                "TX_TYPE: DEPOSIT",
+                "FROM_USER_ID: 1",
+                "TO_USER_ID: 2",
+                "# comment2",
+                "AMOUNT: 100",
+                "TIMESTAMP: 1623228800",
+                "STATUS: SUCCESS",
+                "DESCRIPTION: \"Terminal deposit\"",
+            ]
+            .join("\n"),
+        ));
 
-        let result = Record::from_txt(&mut reader);
+        let result = Record::from_text(&mut reader);
 
         let result = result.unwrap();
 
@@ -511,23 +552,22 @@ DESCRIPTION: "Terminal deposit""#,
     #[case("")]
     #[case("comment")]
     fn test_incorrect_lines(#[case] line: String) {
-        let mut reader = BufReader::new(
-            Cursor::new(
-                vec![
-                    "TX_ID: 1",
-                    "TX_TYPE: DEPOSIT",
-                    "FROM_USER_ID: 1",
-                    line.as_str(),
-                    "TO_USER_ID: 2",
-                    "AMOUNT: 100",
-                    "TIMESTAMP: 1623228800",
-                    "STATUS: SUCCESS",
-                    "DESCRIPTION: \"Terminal deposit\"",
-                ].join("\n")
-            )
-        );
+        let mut reader = BufReader::new(Cursor::new(
+            vec![
+                "TX_ID: 1",
+                "TX_TYPE: DEPOSIT",
+                "FROM_USER_ID: 1",
+                line.as_str(),
+                "TO_USER_ID: 2",
+                "AMOUNT: 100",
+                "TIMESTAMP: 1623228800",
+                "STATUS: SUCCESS",
+                "DESCRIPTION: \"Terminal deposit\"",
+            ]
+            .join("\n"),
+        ));
 
-        let result = Record::from_txt(&mut reader);
+        let result = Record::from_text(&mut reader);
 
         assert!(result.is_err());
 
@@ -535,32 +575,31 @@ DESCRIPTION: "Terminal deposit""#,
 
         assert_eq!(
             result,
-            ParseRecordFromTxtError::UnexpectedError {
-                line,
-                description: "Could not parse string by space delimiter".to_string()
-            }
+            ParseRecordFromTxtError::UnexpectedError(format!(
+                "Could not parse string by space delimiter: {}",
+                line
+            ),)
         );
     }
 
     #[test]
     fn test_no_colon_found() {
-        let mut reader = BufReader::new(
-            Cursor::new(
-                vec![
-                    "# comment",
-                    "TX_ID: 1",
-                    "TX_TYPE: DEPOSIT",
-                    "FROM_USER_ID: 1",
-                    "TO_USER_ID 2",
-                    "AMOUNT: 100",
-                    "TIMESTAMP: 1623228800",
-                    "STATUS: SUCCESS",
-                    "DESCRIPTION: \"Terminal deposit\"",
-                ].join("\n")
-            )
-        );
+        let mut reader = BufReader::new(Cursor::new(
+            vec![
+                "# comment",
+                "TX_ID: 1",
+                "TX_TYPE: DEPOSIT",
+                "FROM_USER_ID: 1",
+                "TO_USER_ID 2",
+                "AMOUNT: 100",
+                "TIMESTAMP: 1623228800",
+                "STATUS: SUCCESS",
+                "DESCRIPTION: \"Terminal deposit\"",
+            ]
+            .join("\n"),
+        ));
 
-        let result = Record::from_txt(&mut reader);
+        let result = Record::from_text(&mut reader);
 
         assert!(result.is_err());
 
@@ -590,43 +629,42 @@ DESCRIPTION: "Terminal deposit""#,
         #[case] value: &str,
         #[case] description: String,
     ) {
-        let mut reader = BufReader::new(
-            Cursor::new(
-                vec![format!("{}: {}", key, value)].join("\n")
-            )
-        );
+        let mut reader =
+            BufReader::new(Cursor::new(vec![format!("{}: {}", key, value)].join("\n")));
 
-        let result = Record::from_txt(&mut reader);
+        let result = Record::from_text(&mut reader);
 
         assert!(result.is_err());
 
         let result = result.err().unwrap();
 
-        // assert_eq!(
-        //     result,
-        //     ParseRecordFromTxtError::InvalidValue { description }
-        // );
+        assert_eq!(
+            result,
+            ParseRecordFromTxtError::InvalidValue(ParseValueError::InvalidValue {
+                value: value.to_string(),
+                description,
+            })
+        );
     }
 
     #[test]
     fn test_unexpected_key() {
-        let mut reader = BufReader::new(
-            Cursor::new(
-                vec![
-                    "TX_ID: 1",
-                    "TX_TYPE: DEPOSIT",
-                    "FROM_USER_ID: 1",
-                    "TO_USER_ID: 2",
-                    "AMOUNT: 100",
-                    "TIMESTAMP: 1623228800",
-                    "STATUS: SUCCESS",
-                    "DESCRIPTION: \"Terminal deposit\"",
-                    "UNEXPECTED_KEY: 1",
-                ].join("\n")
-            )
-        );
+        let mut reader = BufReader::new(Cursor::new(
+            vec![
+                "TX_ID: 1",
+                "TX_TYPE: DEPOSIT",
+                "FROM_USER_ID: 1",
+                "TO_USER_ID: 2",
+                "AMOUNT: 100",
+                "TIMESTAMP: 1623228800",
+                "STATUS: SUCCESS",
+                "DESCRIPTION: \"Terminal deposit\"",
+                "UNEXPECTED_KEY: 1",
+            ]
+            .join("\n"),
+        ));
 
-        let result = Record::from_txt(&mut reader);
+        let result = Record::from_text(&mut reader);
 
         assert!(result.is_err());
 
@@ -642,21 +680,20 @@ DESCRIPTION: "Terminal deposit""#,
 
     #[test]
     fn test_missing_key() {
-        let mut reader = BufReader::new(
-            Cursor::new(
-                vec![
-                    "TX_ID: 1",
-                    "TX_TYPE: DEPOSIT",
-                    "FROM_USER_ID: 1",
-                    "TO_USER_ID: 2",
-                    "AMOUNT: 100",
-                    "TIMESTAMP: 1623228800",
-                    "STATUS: SUCCESS",
-                ].join("\n")
-            )
-        );
+        let mut reader = BufReader::new(Cursor::new(
+            vec![
+                "TX_ID: 1",
+                "TX_TYPE: DEPOSIT",
+                "FROM_USER_ID: 1",
+                "TO_USER_ID: 2",
+                "AMOUNT: 100",
+                "TIMESTAMP: 1623228800",
+                "STATUS: SUCCESS",
+            ]
+            .join("\n"),
+        ));
 
-        let result = Record::from_txt(&mut reader);
+        let result = Record::from_text(&mut reader);
 
         assert!(result.is_err());
 
