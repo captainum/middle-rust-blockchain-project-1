@@ -1,3 +1,12 @@
+//! Библиотека, реализующая Derive-макрос ReadWrite, имплементирующий тела методов
+//! [`read_from`], [`write_from`] структур для взаимодействия с заданными форматами данных.
+//!
+//! Формат данных определяется при помощи атрибута [`format`], который может принимать
+//! следующие значения:
+//! 1. text - текстовый формат описания списка операций;
+//! 2. csv - таблица банковских операций;
+//! 3. bin - бинарное представление списка операций.
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{DeriveInput, parse_macro_input};
@@ -65,7 +74,7 @@ pub fn read_write_derive(input: TokenStream) -> TokenStream {
                 if i > 0 {
                     writer.write_all(b"\n")?;
                 }
-                record.to_txt(&mut writer)?;
+                record.to_text(&mut writer)?;
             }
         },
         "csv" => quote! {
