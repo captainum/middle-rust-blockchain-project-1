@@ -39,7 +39,7 @@ pub fn read_write_derive(input: TokenStream) -> TokenStream {
                     break;
                 }
 
-                records.push(Record::from_csv(&mut reader)?);
+                records.push(Record::from_text(&mut reader)?);
             }
         },
         "csv" => quote! {
