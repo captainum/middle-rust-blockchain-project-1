@@ -75,7 +75,7 @@ pub enum ParseRecordFromTxtError {
     ColonNotFound(String),
 
     /// Некорректное значение ключа записи.
-    #[error("Unexpected key found: {0}")]
+    #[error("{0}")]
     InvalidKey(ParseKeyError),
 
     /// Не найден ожидаемый ключ записи.

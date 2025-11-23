@@ -101,7 +101,7 @@ mod tests {
     fn test_try_from_u8() {
         assert_eq!(TxType::try_from(0).unwrap(), TxType::Deposit);
         assert_eq!(TxType::try_from(1).unwrap(), TxType::Transfer);
-        assert_eq!(TxType::try_from(2).unwrap(), TxType::Transfer);
+        assert_eq!(TxType::try_from(2).unwrap(), TxType::Withdrawal);
 
         assert!(TxType::try_from(3).is_err_and(|e| e.to_string() == "Invalid TX_TYPE: 3"));
     }
