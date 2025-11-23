@@ -34,17 +34,17 @@ pub fn read_write_derive(input: TokenStream) -> TokenStream {
 
     let read_from_body = match fmt {
         "text" => quote! {
-            loop {
-                if reader.fill_buf()?.is_empty() {
-                    break;
-                }
-
+            while !reader.fill_buf()?.is_empty() {
                 records.push(Record::from_text(&mut reader)?);
             }
         },
         "csv" => quote! {
             let mut header = String::new();
             reader.read_line(&mut header)?;
+
+            if header.ends_with('\n') {
+                header.truncate(header.len() - 1);
+            }
 
             Self::validate_header(&header)?;
 
@@ -57,11 +57,7 @@ pub fn read_write_derive(input: TokenStream) -> TokenStream {
             }
         },
         "bin" => quote! {
-            loop {
-                if reader.fill_buf()?.is_empty() {
-                    break;
-                }
-
+            while !reader.fill_buf()?.is_empty() {
                 records.push(Record::from_bin(&mut reader)?);
             }
         },
@@ -82,6 +78,7 @@ pub fn read_write_derive(input: TokenStream) -> TokenStream {
             writer
                 .write_all(header.as_bytes())
                 .map_err(|e| WriteError::WriteHeaderError(e.to_string()))?;
+            writer.write_all(b"\n")?;
 
             for record in &self.records {
                 record.to_csv(&mut writer)?;
