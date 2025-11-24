@@ -1,19 +1,17 @@
 //! Библиотека, обеспечивающая парсинг и сериализацию форматов.
 //!
 //! Доступны операции чтения и записи данных о банковских операциях в форматах:
-//! 1. [`YPBankCsv`] - таблица банковских операций;
+//! 1. CSV-таблица банковских операций;
 //!
-//! 2. [`YPBankText`] - текстовый формат описания списка операций;
+//! 2. текстовый формат описания списка операций;
 //!
-//! 3. [`YPBankBin`] - бинарное предоставление списка операций.
-//!
-//! Все указанные структуры данных реализуют трейт [`YPBank`], описывающий общее поведение.
+//! 3. бинарное предоставление списка операций.
 //!
 //! Чтение из источника данных, реализующего трейт [`Read`], производится при помощи
-//! метода [`read_from`].
+//! методов [`read_from_text`], [`read_from_csv`], [`read_from_bin`] для соответствующих форматов данных.
 //!
 //! Запись производится в назначение, реализующее трейт [`Write`], при помощи
-//! метода ['write_to'].
+//! методов ['write_to_text'], ['write_to_csv'], ['write_to_bin']  для соответствующих форматов данных.
 
 mod errors;
 mod record;
@@ -23,39 +21,111 @@ use record::Record;
 use errors::{ReadError, WriteError};
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 
-use parser_macro::ReadWrite;
-
-/// Трейт для парсинга данных о банковских операциях.
-trait YPBank {
-    /// Считать данные о банковских операциях из указанного источника.
-    fn read_from<R: Read>(r: &mut R) -> Result<Self, ReadError>
-    where
-        Self: Sized;
-
-    /// Записать данные о банковских операциях в указанное место.
-    fn write_to<W: Write>(&self, w: &mut W) -> Result<(), WriteError>;
-}
-
-/// Структура хранения данных о банковских операциях из источника данных,
-/// имеющего текстовый формат.
-#[derive(ReadWrite, Debug)]
-#[format("text")]
-struct YPBankText {
+/// Структура для парсинга и хранения данных о банковских операциях.
+#[derive(Debug)]
+pub struct YPBank {
     /// Записи о банковских операциях.
-    records: Vec<Record>,
+    pub records: Vec<Record>,
 }
 
-/// Структура хранения данных о банковских операциях из источника данных,
-/// имеющего CSV формат.
-#[derive(ReadWrite, Debug)]
-#[format("csv")]
-struct YPBankCsv {
-    /// Записи о банковских операциях.
-    records: Vec<Record>,
+impl YPBank {
+    /// Считать данные о банковских операциях в текстовом формате.
+    pub fn read_from_text<R: Read>(r: &mut R) -> Result<Self, ReadError> {
+        let mut reader = BufReader::new(r);
+
+        let mut records: Vec<Record> = vec![];
+
+        while !reader.fill_buf()?.is_empty() {
+            records.push(Record::from_text(&mut reader)?);
+        }
+
+        Ok(Self { records })
+    }
+
+    /// Записать данные о банковских операциях в текстовом формате.
+    pub fn write_to_text<W: Write>(&self, w: &mut W) -> Result<(), WriteError> {
+        let mut writer = BufWriter::new(w);
+
+        for (i, record) in self.records.iter().enumerate() {
+            if i > 0 {
+                writer.write_all(b"\n")?;
+            }
+            record.to_text(&mut writer)?;
+        }
+
+        Ok(())
+    }
+
+    /// Считать данные о банковских операциях в CSV формате.
+    pub fn read_from_csv<R: Read>(r: &mut R) -> Result<Self, ReadError> {
+        let mut reader = BufReader::new(r);
+
+        let mut records: Vec<Record> = vec![];
+
+        let mut header = String::new();
+        reader.read_line(&mut header)?;
+
+        if header.ends_with('\n') {
+            header.truncate(header.len() - 1);
+        }
+
+        Self::validate_header(&header)?;
+
+        loop {
+            if reader.fill_buf()?.is_empty() {
+                break;
+            }
+
+            records.push(Record::from_csv(&mut reader)?);
+        }
+
+        Ok(Self { records })
+    }
+
+    /// Записать данные о банковских операциях в CSV формате.
+    pub fn write_to_csv<W: Write>(&self, w: &mut W) -> Result<(), WriteError> {
+        let mut writer = BufWriter::new(w);
+
+        let header = Self::prepare_header();
+        writer
+            .write_all(header.as_bytes())
+            .map_err(|e| WriteError::WriteHeaderError(e.to_string()))?;
+        writer.write_all(b"\n")?;
+
+        for record in &self.records {
+            record.to_csv(&mut writer)?;
+        }
+
+        Ok(())
+    }
+
+    /// Считать данные о банковских операциях в бинарном формате.
+    pub fn read_from_bin<R: Read>(r: &mut R) -> Result<Self, ReadError> {
+        let mut reader = BufReader::new(r);
+
+        let mut records: Vec<Record> = vec![];
+
+        while !reader.fill_buf()?.is_empty() {
+            records.push(Record::from_bin(&mut reader)?);
+        }
+
+        Ok(Self { records })
+    }
+
+    /// Записать данные о банковских операциях в бинарном формате.
+    pub fn write_to_bin<W: Write>(&self, w: &mut W) -> Result<(), WriteError> {
+        let mut writer = BufWriter::new(w);
+
+        for record in &self.records {
+            record.to_bin(&mut writer)?;
+        }
+
+        Ok(())
+    }
 }
 
-impl YPBankCsv {
-    /// Подготовить заголовок с именами полей.
+impl YPBank {
+    /// Подготовить заголовок для CSV-формата с именами полей.
     ///
     /// Заголовок соответствует следующей строке:
     ///
@@ -68,7 +138,7 @@ impl YPBankCsv {
             .join(",")
     }
 
-    /// Валидировать переданный заголовок на соответствие ожидаемой структуре.
+    /// Валидировать переданный заголовок для CSV-формата на соответствие ожидаемой структуре.
     fn validate_header(header: &str) -> Result<(), ReadError> {
         let expected_header = Self::prepare_header();
 
@@ -82,21 +152,11 @@ impl YPBankCsv {
     }
 }
 
-/// Структура хранения данных о банковских операциях из источника данных,
-/// имеющего бинарный формат.
-#[derive(ReadWrite, Debug)]
-#[format("bin")]
-struct YPBankBin {
-    /// Записи о банковских операциях.
-    records: Vec<Record>,
-}
-
 #[cfg(test)]
 mod tests {
+    use super::record::status::Status;
+    use super::record::tx_type::TxType;
     use super::*;
-    use crate::record::errors::ParseRecordFromBinError;
-    use crate::record::status::Status;
-    use crate::record::tx_type::TxType;
     use rstest::rstest;
     use std::io::Cursor;
 
@@ -168,7 +228,7 @@ STATUS: SUCCESS
 DESCRIPTION: "User withdrawal"
 "#;
         let mut cursor = Cursor::new(data);
-        let result = YPBankText::read_from(&mut cursor);
+        let result = YPBank::read_from_text(&mut cursor);
 
         let data = result.unwrap();
 
@@ -217,7 +277,7 @@ DESCRIPTION: "User withdrawal"
     fn test_read_from_text_invalid_record() {
         let mut reader = BufReader::new(Cursor::new(vec![0xff, 0xff]));
 
-        let result = YPBankText::read_from(&mut reader);
+        let result = YPBank::read_from_text(&mut reader);
 
         let result = result.unwrap_err();
         assert!(matches!(result, ReadError::InvalidFormat(_)));
@@ -229,10 +289,10 @@ DESCRIPTION: "User withdrawal"
 
     #[test]
     fn test_write_to_text_empty_record() {
-        let data = YPBankText { records: vec![] };
+        let data = YPBank { records: vec![] };
 
         let mut cursor = Cursor::new(vec![]);
-        data.write_to(&mut cursor).unwrap();
+        data.write_to_text(&mut cursor).unwrap();
 
         assert_eq!(cursor.into_inner(), b"");
     }
@@ -241,9 +301,9 @@ DESCRIPTION: "User withdrawal"
     fn test_write_to_text() {
         let records = get_data_to_write();
 
-        let data = YPBankText { records };
+        let data = YPBank { records };
         let mut cursor = Cursor::new(vec![]);
-        assert!(data.write_to(&mut cursor).is_ok());
+        assert!(data.write_to_text(&mut cursor).is_ok());
 
         assert_eq!(
             cursor.into_inner(),
@@ -285,7 +345,7 @@ DESCRIPTION: "User withdrawal"
 1003,WITHDRAWAL,502,0,1000,1672538400000,PENDING,"ATM withdrawal"
 "#;
         let mut cursor = Cursor::new(data.as_bytes());
-        let result = YPBankCsv::read_from(&mut cursor);
+        let result = YPBank::read_from_csv(&mut cursor);
 
         let data = result.unwrap();
         assert_eq!(data.records.len(), 3);
@@ -334,7 +394,7 @@ DESCRIPTION: "User withdrawal"
     #[case(",TX_ID,TX_TYPE,FROM_USER_ID,TO_USER_ID,AMOUNT,TIMESTAMP,STATUS,DESCRIPTION")]
     fn test_read_from_csv_invalid_header(#[case] header: &str) {
         let mut cursor = Cursor::new(header.as_bytes());
-        let result = YPBankCsv::read_from(&mut cursor);
+        let result = YPBank::read_from_csv(&mut cursor);
 
         let result = result.unwrap_err();
         matches!(result, ReadError::InvalidFormat(_));
@@ -347,7 +407,7 @@ DESCRIPTION: "User withdrawal"
     #[test]
     fn test_read_from_csv_invalid_header_symbol() {
         let mut cursor = Cursor::new(vec![0xff]);
-        let result = YPBankCsv::read_from(&mut cursor);
+        let result = YPBank::read_from_csv(&mut cursor);
 
         let result = result.unwrap_err();
         assert!(matches!(result, ReadError::UnexpectedError(_)));
@@ -364,7 +424,7 @@ DESCRIPTION: "User withdrawal"
 "1001,DEPOSIT,0,501,50000,SUCCESS,\"Initial account funding\"""#,
         ));
 
-        let result = YPBankCsv::read_from(&mut reader);
+        let result = YPBank::read_from_csv(&mut reader);
 
         let result = result.unwrap_err();
         assert!(matches!(result, ReadError::InvalidFormat(_)));
@@ -376,9 +436,9 @@ DESCRIPTION: "User withdrawal"
 
     #[test]
     fn test_write_to_csv_empty_record() {
-        let data = YPBankCsv { records: vec![] };
+        let data = YPBank { records: vec![] };
         let mut cursor = Cursor::new(vec![]);
-        data.write_to(&mut cursor).unwrap();
+        data.write_to_csv(&mut cursor).unwrap();
         assert_eq!(
             cursor.into_inner(),
             b"TX_ID,TX_TYPE,FROM_USER_ID,TO_USER_ID,AMOUNT,TIMESTAMP,STATUS,DESCRIPTION\n"
@@ -389,9 +449,9 @@ DESCRIPTION: "User withdrawal"
     fn test_write_to_csv() {
         let records = get_data_to_write();
 
-        let data = YPBankCsv { records };
+        let data = YPBank { records };
         let mut cursor = Cursor::new(vec![]);
-        data.write_to(&mut cursor).unwrap();
+        data.write_to_csv(&mut cursor).unwrap();
 
         assert_eq!(
             cursor.into_inner(),
@@ -435,7 +495,7 @@ DESCRIPTION: "User withdrawal"
         ];
 
         let mut cursor = Cursor::new(data);
-        let result = YPBankBin::read_from(&mut cursor);
+        let result = YPBank::read_from_bin(&mut cursor);
 
         let data = result.unwrap();
         assert_eq!(data.records.len(), 2);
@@ -470,7 +530,7 @@ DESCRIPTION: "User withdrawal"
     fn test_read_from_bin_invalid_record() {
         let mut reader = BufReader::new(Cursor::new(vec![0x59, 0x51, 0x42, 0x4E]));
 
-        let result = YPBankBin::read_from(&mut reader);
+        let result = YPBank::read_from_bin(&mut reader);
 
         let result = result.unwrap_err();
         assert!(matches!(result, ReadError::InvalidFormat(_)));
@@ -479,9 +539,9 @@ DESCRIPTION: "User withdrawal"
 
     #[test]
     fn test_write_to_bin_empty_record() {
-        let data = YPBankBin { records: vec![] };
+        let data = YPBank { records: vec![] };
         let mut cursor = Cursor::new(vec![]);
-        data.write_to(&mut cursor).unwrap();
+        data.write_to_bin(&mut cursor).unwrap();
         assert_eq!(cursor.into_inner(), b"");
     }
 
@@ -489,9 +549,9 @@ DESCRIPTION: "User withdrawal"
     fn test_write_to_bin() {
         let records = get_data_to_write();
 
-        let data = YPBankBin { records };
+        let data = YPBank { records };
         let mut cursor = Cursor::new(vec![]);
-        data.write_to(&mut cursor).unwrap();
+        data.write_to_bin(&mut cursor).unwrap();
 
         assert_eq!(
             cursor.into_inner(),

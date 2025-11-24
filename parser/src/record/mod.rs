@@ -1,7 +1,6 @@
 //! Модуль описания записи о транзакции.
 
 use std::collections::HashMap;
-use std::fmt;
 use std::io::{BufRead, Write};
 
 pub mod errors;
