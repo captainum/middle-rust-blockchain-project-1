@@ -13,14 +13,22 @@ Options:
 "#
 }
 
+/// Формат данных.
 enum Format {
+    /// Текстовый формат.
     TEXT,
+
+    /// CSV-формат.
     CSV,
+
+    /// Бинарный формат.
     BIN,
 }
 
+/// Ошибка парсинга формата данных.
 #[derive(Error, Debug)]
 enum InputFormatError {
+    /// Некорректный формат.
     #[error("Invalid format: {0}")]
     UnknownFormat(String),
 }
