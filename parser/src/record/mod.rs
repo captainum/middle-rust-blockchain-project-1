@@ -89,6 +89,7 @@ impl Record {
     ];
 
     /// Создание нового объекта записи о транзакции на основе переданных данных.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         tx_id: u64,
         tx_type: TxType,
@@ -353,7 +354,7 @@ DESCRIPTION: "{}""#,
     pub fn to_csv<W: Write>(&self, w: &mut W) -> Result<(), std::io::Error> {
         w.write_all(
             format!(
-                "{},{},{},{},{},{},{},{}\n",
+                "{},{},{},{},{},{},{},\"{}\"\n",
                 self.tx_id,
                 self.tx_type,
                 self.from_user_id,
@@ -361,7 +362,7 @@ DESCRIPTION: "{}""#,
                 self.amount,
                 self.timestamp,
                 self.status,
-                format!("\"{}\"", self.description)
+                self.description
             )
             .as_bytes(),
         )

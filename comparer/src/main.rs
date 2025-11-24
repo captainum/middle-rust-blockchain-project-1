@@ -18,13 +18,13 @@ Options:
 /// Формат данных.
 enum Format {
     /// Текстовый формат.
-    TEXT,
+    Text,
 
     /// CSV-формат.
-    CSV,
+    Csv,
 
     /// Бинарный формат.
-    BIN,
+    Bin,
 }
 
 /// Ошибка парсинга формата данных.
@@ -40,9 +40,9 @@ impl TryFrom<&str> for Format {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "text" => Ok(Self::TEXT),
-            "csv" => Ok(Self::CSV),
-            "bin" => Ok(Self::BIN),
+            "text" => Ok(Self::Text),
+            "csv" => Ok(Self::Csv),
+            "bin" => Ok(Self::Bin),
             _ => Err(InputFormatError::UnknownFormat(value.to_string())),
         }
     }
@@ -53,9 +53,9 @@ macro_rules! open_and_read {
         let mut file = std::fs::File::open($file)
             .unwrap_or_else(|e| panic!("Error reading input file {}: {}", $name, e));
         match $format {
-            Format::TEXT => YPBank::read_from_text(&mut file),
-            Format::CSV => YPBank::read_from_csv(&mut file),
-            Format::BIN => YPBank::read_from_bin(&mut file),
+            Format::Text => YPBank::read_from_text(&mut file),
+            Format::Csv => YPBank::read_from_csv(&mut file),
+            Format::Bin => YPBank::read_from_bin(&mut file),
         }
         .unwrap_or_else(|e| panic!("Error reading data from file: {}", e.to_string()))
     }};

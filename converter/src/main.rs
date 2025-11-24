@@ -16,13 +16,13 @@ Options:
 /// Формат данных.
 enum Format {
     /// Текстовый формат.
-    TEXT,
+    Text,
 
     /// CSV-формат.
-    CSV,
+    Csv,
 
     /// Бинарный формат.
-    BIN,
+    Bin,
 }
 
 /// Ошибка парсинга формата данных.
@@ -38,9 +38,9 @@ impl TryFrom<&str> for Format {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "text" => Ok(Self::TEXT),
-            "csv" => Ok(Self::CSV),
-            "bin" => Ok(Self::BIN),
+            "text" => Ok(Self::Text),
+            "csv" => Ok(Self::Csv),
+            "bin" => Ok(Self::Bin),
             _ => Err(InputFormatError::UnknownFormat(value.to_string())),
         }
     }
@@ -105,19 +105,19 @@ fn main() {
         output_format.unwrap_or_else(|| panic!("Output data format not specified!"));
 
     let mut input_file = std::fs::File::open(input_filename)
-        .unwrap_or_else(|e| panic!("Error reading input file: {}", e.to_string()));
+        .unwrap_or_else(|e| panic!("Error reading input file: {}", e));
 
     let data = match input_format {
-        Format::TEXT => YPBank::read_from_text(&mut input_file),
-        Format::CSV => YPBank::read_from_csv(&mut input_file),
-        Format::BIN => YPBank::read_from_bin(&mut input_file),
+        Format::Text => YPBank::read_from_text(&mut input_file),
+        Format::Csv => YPBank::read_from_csv(&mut input_file),
+        Format::Bin => YPBank::read_from_bin(&mut input_file),
     }
-    .unwrap_or_else(|e| panic!("Error reading data from file: {}", e.to_string()));
+    .unwrap_or_else(|e| panic!("Error reading data from file: {}", e));
 
     match output_format {
-        Format::TEXT => data.write_to_text(&mut std::io::stdout()),
-        Format::CSV => data.write_to_csv(&mut std::io::stdout()),
-        Format::BIN => data.write_to_bin(&mut std::io::stdout()),
+        Format::Text => data.write_to_text(&mut std::io::stdout()),
+        Format::Csv => data.write_to_csv(&mut std::io::stdout()),
+        Format::Bin => data.write_to_bin(&mut std::io::stdout()),
     }
-    .unwrap_or_else(|e| panic!("Data output error: {}", e.to_string()));
+    .unwrap_or_else(|e| panic!("Data output error: {}", e));
 }
