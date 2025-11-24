@@ -484,7 +484,7 @@ DESCRIPTION: "{}""#,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::record::errors::ParseKeyError;
+    use super::errors::ParseKeyError;
     use rstest::rstest;
     use std::io::{BufReader, Cursor};
 
