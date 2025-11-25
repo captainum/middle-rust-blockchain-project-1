@@ -37,10 +37,13 @@ enum CliError {
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
-    ReadDataError(#[from] ReadError),
+    ReadData(#[from] ReadError),
 
     #[error(transparent)]
-    WriteDataError(#[from] WriteError),
+    WriteData(#[from] WriteError),
+
+    #[error("File is too big!")]
+    TooBigFile,
 }
 
 /// Формат данных.
@@ -70,6 +73,10 @@ impl TryFrom<&str> for Format {
 
 macro_rules! open_and_read {
     ($file:expr, $format:expr, $name:literal) => {{
+        if std::fs::metadata(&$file)?.len() > 1024 * 1024 * 1024 {
+            return Err(CliError::TooBigFile);
+        }
+
         let mut file = std::fs::File::open($file)?;
         match $format {
             Format::Text => YPBankText::read_from(&mut file)?.records,
@@ -124,9 +131,10 @@ fn main() {
         let exit_code = match err {
             CliError::UnknownFormat(_) => -1,
             CliError::Io(_) => -2,
-            CliError::ReadDataError(_) => -3,
-            CliError::WriteDataError(_) => -4,
+            CliError::ReadData(_) => -3,
+            CliError::WriteData(_) => -4,
             CliError::UnequalData { .. } => -5,
+            CliError::TooBigFile => -6,
         };
 
         eprintln!("{}", err);

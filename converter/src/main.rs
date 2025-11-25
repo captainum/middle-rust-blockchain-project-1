@@ -33,10 +33,13 @@ enum CliError {
     Io(#[from] std::io::Error),
 
     #[error(transparent)]
-    ReadDataError(#[from] ReadError),
+    ReadData(#[from] ReadError),
 
     #[error(transparent)]
-    WriteDataError(#[from] WriteError),
+    WriteData(#[from] WriteError),
+
+    #[error("File is too big!")]
+    TooBigFile,
 }
 
 /// Формат данных.
@@ -77,6 +80,10 @@ fn run() -> Result<(), CliError> {
     let input_format: Format = convert_format!(args.input_format);
     let output_format: Format = convert_format!(args.output_format);
 
+    if std::fs::metadata(&input_filename)?.len() > 1024 * 1024 * 1024 {
+        return Err(CliError::TooBigFile);
+    }
+
     let mut input_file = std::fs::File::open(input_filename)?;
 
     let records = match input_format {
@@ -103,8 +110,9 @@ fn main() {
         let exit_code = match err {
             CliError::UnknownFormat(_) => -1,
             CliError::Io(_) => -2,
-            CliError::ReadDataError(_) => -3,
-            CliError::WriteDataError(_) => -4,
+            CliError::ReadData(_) => -3,
+            CliError::WriteData(_) => -4,
+            CliError::TooBigFile => -5,
         };
 
         eprintln!("{}", err);
