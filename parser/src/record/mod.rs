@@ -483,15 +483,15 @@ DESCRIPTION: "{}""#,
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::errors::ParseKeyError;
+    use super::*;
     use rstest::rstest;
     use std::io::{BufReader, Cursor};
 
     #[test]
     fn test_read_from_text_correct_record() {
         let mut reader = BufReader::new(Cursor::new(
-            vec![
+            [
                 "TX_ID: 1",
                 "TX_TYPE: DEPOSIT",
                 "FROM_USER_ID: 0",
@@ -525,7 +525,7 @@ mod tests {
     #[test]
     fn test_read_from_text_correct_record_with_comments() {
         let mut reader = BufReader::new(Cursor::new(
-            vec![
+            [
                 "# comment1",
                 "TX_ID: 1",
                 "TX_TYPE: DEPOSIT",
@@ -580,7 +580,7 @@ DESCRIPTION: "Terminal deposit"
     #[test]
     fn test_read_from_text_incorrect_line() {
         let mut reader = BufReader::new(Cursor::new(
-            vec![
+            [
                 "TX_ID: 1",
                 "TX_TYPE: DEPOSIT",
                 "FROM_USER_ID: 1",
@@ -610,7 +610,7 @@ DESCRIPTION: "Terminal deposit"
     #[test]
     fn test_read_from_text_no_colon_found() {
         let mut reader = BufReader::new(Cursor::new(
-            vec![
+            [
                 "# comment",
                 "TX_ID: 1",
                 "TX_TYPE: DEPOSIT",
@@ -649,8 +649,7 @@ DESCRIPTION: "Terminal deposit"
         #[case] value: &str,
         #[case] description: &str,
     ) {
-        let mut reader =
-            BufReader::new(Cursor::new(vec![format!("{}: {}", key, value)].join("\n")));
+        let mut reader = BufReader::new(Cursor::new(format!("{}: {}", key, value)));
 
         let result = Record::from_text(&mut reader);
 
@@ -668,7 +667,7 @@ DESCRIPTION: "Terminal deposit"
     #[test]
     fn test_read_from_text_unexpected_key() {
         let mut reader = BufReader::new(Cursor::new(
-            vec![
+            [
                 "TX_ID: 1",
                 "TX_TYPE: DEPOSIT",
                 "FROM_USER_ID: 1",
@@ -695,7 +694,7 @@ DESCRIPTION: "Terminal deposit"
     #[test]
     fn test_read_from_text_missing_key() {
         let mut reader = BufReader::new(Cursor::new(
-            vec![
+            [
                 "TX_ID: 1",
                 "TX_TYPE: DEPOSIT",
                 "FROM_USER_ID: 1",
@@ -747,7 +746,7 @@ DESCRIPTION: "Initial account funding"
     #[case("1001,DEPOSIT,0,501,50000,1672531200000,SUCCESS,\"Initial account funding\"")]
     #[case("1001,DEPOSIT,0,501,50000,1672531200000,SUCCESS,\"Initial account funding\"\n")]
     fn test_read_from_csv_correct_record(#[case] line: &str) {
-        let mut reader = BufReader::new(Cursor::new(vec![line].join("\n")));
+        let mut reader = BufReader::new(Cursor::new(line));
 
         let result = Record::from_csv(&mut reader);
 
@@ -803,7 +802,7 @@ DESCRIPTION: "Initial account funding"
     #[case("1001", 1)]
     #[case("1001,DEPOSIT,0,501,50000,SUCCESS,\"Initial account funding\"", 7)]
     fn test_read_from_csv_incorrect_count_of_columns(#[case] line: &str, #[case] count: usize) {
-        let mut reader = BufReader::new(Cursor::new(vec![line].join("\n")));
+        let mut reader = BufReader::new(Cursor::new(line));
 
         let result = Record::from_csv(&mut reader);
 
@@ -864,7 +863,7 @@ DESCRIPTION: "Initial account funding"
         #[case] value: &str,
         #[case] description: &str,
     ) {
-        let mut reader = BufReader::new(Cursor::new(vec![line].join("\n")));
+        let mut reader = BufReader::new(Cursor::new(line));
 
         let result = Record::from_csv(&mut reader);
 
