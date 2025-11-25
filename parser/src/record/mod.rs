@@ -428,6 +428,15 @@ DESCRIPTION: "{}""#,
 
         let desc_len = r.read_u32::<BigEndian>()?;
 
+        if record_size != Self::BINARY_MIN_RECORD_SIZE + desc_len {
+            return Err(ParseRecordFromBinError::UnexpectedError(format!(
+                "true record size is not equal to expected (record size({}) != static length ({}) + description length ({}))",
+                record_size,
+                Self::BINARY_MIN_RECORD_SIZE,
+                desc_len
+            )));
+        }
+
         if desc_len > 0 {
             let mut buffer = vec![0u8; desc_len as usize];
             r.read_exact(&mut buffer)?;
@@ -942,7 +951,7 @@ DESCRIPTION: "Initial account funding"
     fn test_read_from_bin_correct_record_empty_description() {
         let mut reader = BufReader::new(Cursor::new(vec![
             0x59, 0x50, 0x42, 0x4E, // MAGIC
-            0x00, 0x00, 0x00, 0x3f, // RECORD_SIZE
+            0x00, 0x00, 0x00, 0x2e, // RECORD_SIZE
             0x00, 0x03, 0x8d, 0x7e, 0xa4, 0xc6, 0x80, 0x00, // TX_ID
             0x00, // TX_TYPE
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // FROM_USER_ID
@@ -990,6 +999,36 @@ DESCRIPTION: "Initial account funding"
     }
 
     #[test]
+    fn test_read_from_bin_invalid_desc_len() {
+        let mut reader = BufReader::new(Cursor::new(vec![
+            0x59, 0x50, 0x42, 0x4E, // MAGIC
+            0x00, 0x00, 0x00, 0x3f, // RECORD_SIZE
+            0x00, 0x03, 0x8d, 0x7e, 0xa4, 0xc6, 0x80, 0x00, // TX_ID
+            0x00, // TX_TYPE
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // FROM_USER_ID
+            0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // TO_USER_ID
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, // AMOUNT
+            0x00, 0x00, 0x01, 0x7c, 0x38, 0x94, 0xfa, 0x60, // TIMESTAMP
+            0x01, // STATUS
+            0x00, 0x00, 0x00, 0x10, // DESCRIPTION_SIZE
+            0x22, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x20, 0x6e, 0x75, 0x6d, 0x62, 0x65, 0x72,
+            0x20, 0x31, 0x22, // DESCRIPTION
+        ]));
+
+        let result = Record::from_bin(&mut reader);
+
+        let result = result.unwrap_err();
+        assert!(matches!(
+            result,
+            ParseRecordFromBinError::UnexpectedError(_)
+        ));
+        assert_eq!(
+            result.to_string(),
+            "Unexpected error: true record size is not equal to expected (record size(63) != static length (46) + description length (16))"
+        );
+    }
+
+    #[test]
     fn test_read_from_bin_invalid_magic() {
         let mut reader = BufReader::new(Cursor::new(vec![0x59, 0x51, 0x42, 0x4E]));
 
@@ -1033,7 +1072,7 @@ DESCRIPTION: "Initial account funding"
             0x01, // STATUS
             0x00, 0x00, 0x00, 0x11, // DESCRIPTION_SIZE
             0x22, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x20, 0x6e, 0x75, 0x6d, 0x62, 0x65, 0x72,
-            0x20, 0x31, // DESCRIPTION
+            0x20, // DESCRIPTION
         ]));
 
         let result = Record::from_bin(&mut reader);
