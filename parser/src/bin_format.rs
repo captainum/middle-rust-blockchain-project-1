@@ -1,7 +1,7 @@
-use std::io::{BufRead, BufReader, BufWriter, Read, Write};
+use super::YPBank;
 use super::errors::{ReadError, WriteError};
 use super::record::Record;
-use super::YPBank;
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 
 #[derive(Debug)]
 pub struct YPBankBin {
@@ -38,9 +38,9 @@ impl YPBank for YPBankBin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::record::errors::ParseRecordFromBinError;
     use crate::record::status::Status;
     use crate::record::tx_type::TxType;
-    use crate::record::errors::ParseRecordFromBinError;
     use std::io::Cursor;
 
     #[test]

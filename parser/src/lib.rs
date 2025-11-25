@@ -15,18 +15,18 @@
 
 #![deny(unreachable_pub)]
 
+mod bin_format;
+mod csv_format;
 pub mod errors;
 pub mod record;
 mod text_format;
-mod bin_format;
-mod csv_format;
 
 use errors::{ReadError, WriteError};
 use std::io::{Read, Write};
 
-pub use text_format::YPBankText;
-pub use csv_format::YPBankCsv;
 pub use bin_format::YPBankBin;
+pub use csv_format::YPBankCsv;
+pub use text_format::YPBankText;
 
 /// Трейт для парсинга и хранения данных о банковских операциях.
 pub trait YPBank: Sized {
@@ -39,9 +39,9 @@ pub trait YPBank: Sized {
 
 #[cfg(test)]
 mod tests {
+    use super::record::Record;
     use super::record::status::Status;
     use super::record::tx_type::TxType;
-    use super::record::Record;
 
     pub(super) fn get_data_to_write() -> Vec<Record> {
         vec![

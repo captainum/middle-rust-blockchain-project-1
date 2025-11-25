@@ -1,5 +1,8 @@
 use clap::Parser;
-use parser::{errors::{ReadError, WriteError}, YPBank, YPBankText, YPBankCsv, YPBankBin};
+use parser::{
+    YPBank, YPBankBin, YPBankCsv, YPBankText,
+    errors::{ReadError, WriteError},
+};
 use std::io::Write;
 use thiserror::Error;
 
@@ -63,9 +66,7 @@ impl TryFrom<&str> for Format {
 
 macro_rules! convert_format {
     ($input:expr) => {
-        $input
-            .as_str()
-            .try_into()?
+        $input.as_str().try_into()?
     };
 }
 
@@ -92,8 +93,7 @@ fn run() -> Result<(), CliError> {
         Format::Bin => YPBankBin { records }.write_to(&mut stdout),
     }?;
 
-    stdout
-        .flush()?;
+    stdout.flush()?;
 
     Ok(())
 }
@@ -107,7 +107,7 @@ fn main() {
             CliError::WriteDataError(_) => -4,
         };
 
-        eprintln!("{}", err.to_string());
+        eprintln!("{}", err);
         std::process::exit(exit_code);
     }
 }

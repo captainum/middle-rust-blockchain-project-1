@@ -1,7 +1,7 @@
-use std::io::{BufRead, BufReader, BufWriter, Read, Write};
+use super::YPBank;
 use super::errors::{ReadError, WriteError};
 use super::record::Record;
-use super::YPBank;
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 
 #[derive(Debug)]
 pub struct YPBankText {
@@ -41,9 +41,9 @@ impl YPBank for YPBankText {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::record::errors::ParseRecordFromTxtError;
     use crate::record::status::Status;
     use crate::record::tx_type::TxType;
-    use crate::record::errors::ParseRecordFromTxtError;
     use std::io::Cursor;
 
     #[test]
@@ -96,7 +96,7 @@ DESCRIPTION: "User withdrawal"
                 Status::Success,
                 "Terminal deposit".to_string(),
             )
-                .clone(),
+            .clone(),
             Record::new(
                 2312321321321321,
                 TxType::Transfer,
@@ -107,7 +107,7 @@ DESCRIPTION: "User withdrawal"
                 Status::Failure,
                 "User transfer".to_string(),
             )
-                .clone(),
+            .clone(),
             Record::new(
                 3213213213213213,
                 TxType::Withdrawal,
@@ -118,7 +118,7 @@ DESCRIPTION: "User withdrawal"
                 Status::Success,
                 "User withdrawal".to_string(),
             )
-                .clone(),
+            .clone(),
         ];
 
         assert_eq!(data.records, expected_records);

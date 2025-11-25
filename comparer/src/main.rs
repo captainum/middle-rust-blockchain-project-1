@@ -1,7 +1,7 @@
 use clap::Parser;
-use parser::{YPBank, YPBankText, YPBankCsv, YPBankBin};
-use thiserror::Error;
 use parser::errors::{ReadError, WriteError};
+use parser::{YPBank, YPBankBin, YPBankCsv, YPBankText};
+use thiserror::Error;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -31,10 +31,7 @@ enum CliError {
     UnknownFormat(String),
 
     #[error("The number of transactions in the files differs ({len1} != {len2})!")]
-    UnequalData {
-        len1: usize,
-        len2: usize,
-    },
+    UnequalData { len1: usize, len2: usize },
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -84,9 +81,7 @@ macro_rules! open_and_read {
 
 macro_rules! convert_format {
     ($input:expr) => {
-        $input
-            .as_str()
-            .try_into()?
+        $input.as_str().try_into()?
     };
 }
 
@@ -97,7 +92,6 @@ fn run() -> Result<(), CliError> {
     let file2 = args.file2;
     let format1: Format = convert_format!(args.format1);
     let format2: Format = convert_format!(args.format2);
-
 
     let records1 = open_and_read!(file1.clone(), format1, "--file1");
     let records2 = open_and_read!(file2.clone(), format2, "--file2");
@@ -135,7 +129,7 @@ fn main() {
             CliError::UnequalData { .. } => -5,
         };
 
-        eprintln!("{}", err.to_string());
+        eprintln!("{}", err);
         std::process::exit(exit_code);
     }
 }

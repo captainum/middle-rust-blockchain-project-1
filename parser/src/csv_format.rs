@@ -1,8 +1,8 @@
-use std::io::{BufRead, BufReader, BufWriter, Read, Write};
-use crate::record::errors::ParseRecordFromCsvError;
+use super::YPBank;
 use super::errors::{ReadError, WriteError};
 use super::record::Record;
-use super::YPBank;
+use crate::record::errors::ParseRecordFromCsvError;
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 
 #[derive(Debug)]
 pub struct YPBankCsv {
@@ -84,11 +84,11 @@ impl YPBank for YPBankCsv {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::record::errors::ParseRecordFromCsvError;
     use crate::record::status::Status;
     use crate::record::tx_type::TxType;
-    use crate::record::errors::ParseRecordFromCsvError;
-    use std::io::Cursor;
     use rstest::rstest;
+    use std::io::Cursor;
 
     #[test]
     fn test_read_from_csv_data_specification() {
@@ -114,7 +114,7 @@ mod tests {
                 Status::Success,
                 "Initial account funding".to_string(),
             )
-                .clone(),
+            .clone(),
             Record::new(
                 1002,
                 TxType::Transfer,
@@ -125,7 +125,7 @@ mod tests {
                 Status::Failure,
                 "Payment for services, invoice #123".to_string(),
             )
-                .clone(),
+            .clone(),
             Record::new(
                 1003,
                 TxType::Withdrawal,
@@ -136,7 +136,7 @@ mod tests {
                 Status::Pending,
                 "ATM withdrawal".to_string(),
             )
-                .clone(),
+            .clone(),
         ];
 
         assert_eq!(data.records, expected_records);
