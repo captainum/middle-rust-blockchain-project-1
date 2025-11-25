@@ -1,5 +1,6 @@
 use parser::YPBank;
 use std::env;
+use std::io::Write;
 use thiserror::Error;
 fn help() -> &'static str {
     r#"Usage:
@@ -114,10 +115,14 @@ fn main() {
     }
     .unwrap_or_else(|e| panic!("Error reading data from file: {}", e));
 
+    let mut stdout = std::io::stdout().lock();
+
     match output_format {
-        Format::Text => data.write_to_text(&mut std::io::stdout()),
-        Format::Csv => data.write_to_csv(&mut std::io::stdout()),
-        Format::Bin => data.write_to_bin(&mut std::io::stdout()),
+        Format::Text => data.write_to_text(&mut stdout),
+        Format::Csv => data.write_to_csv(&mut stdout),
+        Format::Bin => data.write_to_bin(&mut stdout),
     }
     .unwrap_or_else(|e| panic!("Data output error: {}", e));
+
+    stdout.flush().unwrap_or_else(|e| panic!("Error flushing stdout: {}", e));
 }
