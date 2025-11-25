@@ -15,8 +15,8 @@
 
 #![deny(unreachable_pub)]
 
-mod errors;
-mod record;
+pub mod errors;
+pub mod record;
 
 use record::Record;
 
@@ -68,9 +68,7 @@ impl YPBank {
         let mut header = String::new();
         reader.read_line(&mut header)?;
 
-        if header.ends_with('\n') {
-            header.truncate(header.len() - 1);
-        }
+        header = header.trim_end_matches(['\r', '\n']).to_string();
 
         Self::validate_header(&header)?;
 

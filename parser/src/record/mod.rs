@@ -256,9 +256,7 @@ impl Record {
                 break;
             }
 
-            if line.ends_with('\n') {
-                line.truncate(line.len() - 1);
-            }
+            line = line.trim_end_matches(['\r', '\n']).to_string();
 
             if line.starts_with('#') {
                 continue;
@@ -334,9 +332,7 @@ DESCRIPTION: "{}""#,
             ));
         }
 
-        if line.ends_with('\n') {
-            line.truncate(line.len() - 1);
-        }
+        line = line.trim_end_matches(['\r', '\n']).to_string();
 
         let values = line
             .splitn(Self::EXPECTED_KEYS.len(), ',')
