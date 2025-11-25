@@ -1,5 +1,5 @@
 use clap::Parser;
-use parser::{errors::{ReadError, WriteError}, YPBank};
+use parser::{errors::{ReadError, WriteError}, YPBank, YPBankText, YPBankCsv, YPBankBin};
 use std::io::Write;
 use thiserror::Error;
 
@@ -78,18 +78,18 @@ fn run() -> Result<(), CliError> {
 
     let mut input_file = std::fs::File::open(input_filename)?;
 
-    let data = match input_format {
-        Format::Text => YPBank::read_from_text(&mut input_file),
-        Format::Csv => YPBank::read_from_csv(&mut input_file),
-        Format::Bin => YPBank::read_from_bin(&mut input_file),
-    }?;
+    let records = match input_format {
+        Format::Text => YPBankText::read_from(&mut input_file)?.records,
+        Format::Csv => YPBankCsv::read_from(&mut input_file)?.records,
+        Format::Bin => YPBankBin::read_from(&mut input_file)?.records,
+    };
 
     let mut stdout = std::io::stdout().lock();
 
     match output_format {
-        Format::Text => data.write_to_text(&mut stdout),
-        Format::Csv => data.write_to_csv(&mut stdout),
-        Format::Bin => data.write_to_bin(&mut stdout),
+        Format::Text => YPBankText { records }.write_to(&mut stdout),
+        Format::Csv => YPBankCsv { records }.write_to(&mut stdout),
+        Format::Bin => YPBankBin { records }.write_to(&mut stdout),
     }?;
 
     stdout

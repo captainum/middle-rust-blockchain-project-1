@@ -1,5 +1,5 @@
 use clap::Parser;
-use parser::YPBank;
+use parser::{YPBank, YPBankText, YPBankCsv, YPBankBin};
 use thiserror::Error;
 use parser::errors::{ReadError, WriteError};
 
@@ -75,9 +75,9 @@ macro_rules! open_and_read {
     ($file:expr, $format:expr, $name:literal) => {{
         let mut file = std::fs::File::open($file)?;
         match $format {
-            Format::Text => YPBank::read_from_text(&mut file),
-            Format::Csv => YPBank::read_from_csv(&mut file),
-            Format::Bin => YPBank::read_from_bin(&mut file),
+            Format::Text => YPBankText::read_from(&mut file)?.records,
+            Format::Csv => YPBankCsv::read_from(&mut file)?.records,
+            Format::Bin => YPBankBin::read_from(&mut file)?.records,
         }
     }};
 }
@@ -98,20 +98,20 @@ fn run() -> Result<(), CliError> {
     let format1: Format = convert_format!(args.format1);
     let format2: Format = convert_format!(args.format2);
 
-    let data1 = open_and_read!(file1.clone(), format1, "--file1")?;
-    let data2 = open_and_read!(file2.clone(), format2, "--file2")?;
 
-    if data1.records.len() != data2.records.len() {
+    let records1 = open_and_read!(file1.clone(), format1, "--file1");
+    let records2 = open_and_read!(file2.clone(), format2, "--file2");
+
+    if records1.len() != records2.len() {
         return Err(CliError::UnequalData {
-            len1: data1.records.len(),
-            len2: data2.records.len(),
+            len1: records1.len(),
+            len2: records2.len(),
         });
     }
 
-    match data1
-        .records
+    match records1
         .iter()
-        .zip(data2.records.iter())
+        .zip(records2.iter())
         .position(|(r1, r2)| r1 != r2)
     {
         Some(idx) => println!("Transactions numbered {} are different!", idx + 1),
