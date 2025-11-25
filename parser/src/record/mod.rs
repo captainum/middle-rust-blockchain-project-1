@@ -1,6 +1,6 @@
 //! Модуль описания записи о транзакции.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::io::{BufRead, Write};
 
 pub mod errors;
@@ -245,10 +245,7 @@ impl Record {
     pub fn from_text<R: BufRead>(r: &mut R) -> Result<Self, ParseRecordFromTxtError> {
         let mut result = Self::default();
 
-        let mut expected_keys = Self::EXPECTED_KEYS
-            .iter()
-            .map(|&k| (k, false))
-            .collect::<HashMap<_, _>>();
+        let mut expected_keys = HashSet::from(Self::EXPECTED_KEYS);
 
         loop {
             let mut line = String::new();
@@ -284,7 +281,13 @@ impl Record {
             expected_keys.remove(&key);
         }
 
-        if let Some((key, _)) = expected_keys.iter().find(|(_, val)| !*val) {
+        if !expected_keys.is_empty() {
+            let key = expected_keys.iter().nth(0).ok_or_else(|| {
+                ParseRecordFromTxtError::UnexpectedError(
+                    "Expected keys are not empty, but could not get value".to_string(),
+                )
+            })?;
+
             return Err(ParseRecordFromTxtError::MissingKey(key.to_string()));
         }
 
