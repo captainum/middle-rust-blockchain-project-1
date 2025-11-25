@@ -52,20 +52,21 @@ impl TryFrom<&str> for Format {
     }
 }
 
+macro_rules! convert_format {
+    ($input:expr) => {
+        $input
+            .as_str()
+            .try_into()
+            .unwrap_or_else(|e: InputFormatError| panic!("{}", e.to_string()))
+    };
+}
+
 fn main() {
     let args = Args::parse();
 
     let input_filename = args.input;
-    let input_format: Format = args
-        .input_format
-        .as_str()
-        .try_into()
-        .unwrap_or_else(|e: InputFormatError| panic!("{}", e.to_string()));
-    let output_format: Format = args
-        .output_format
-        .as_str()
-        .try_into()
-        .unwrap_or_else(|e: InputFormatError| panic!("{}", e.to_string()));
+    let input_format: Format = convert_format!(args.input_format);
+    let output_format: Format = convert_format!(args.output_format);
 
     let mut input_file = std::fs::File::open(input_filename)
         .unwrap_or_else(|e| panic!("Error reading input file: {}", e));
