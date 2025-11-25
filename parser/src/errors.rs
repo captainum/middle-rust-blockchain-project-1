@@ -3,48 +3,38 @@ use super::record::errors::{
 };
 use thiserror::Error;
 
+/// Ошибка чтения данных из источника.
 #[derive(Debug, Error)]
 pub enum ReadError {
-    #[error("Invalid format: {0}")]
-    InvalidFormat(String),
-    #[error("Unexpected error: {0}")]
-    UnexpectedError(String),
+    /// Ошибка чтения данных из текстового источника.
+    #[error("Text format parsing error: {0}")]
+    FromText(#[from] ParseRecordFromTxtError),
+
+    /// Ошибка чтения данных из CSV источника.
+    #[error("CSV format parsing error: {0}")]
+    FromCsv(#[from] ParseRecordFromCsvError),
+
+    /// Ошибка чтения данных из бинарного источника.
+    #[error("Binary format parsing error: {0}")]
+    FromBin(#[from] ParseRecordFromBinError),
+
+    /// Ошибка чтения данных, не связанная с его типом.
+    #[error("Read data error: {0}")]
+    Io(#[from] std::io::Error),
 }
 
-impl From<ParseRecordFromTxtError> for ReadError {
-    fn from(e: ParseRecordFromTxtError) -> Self {
-        Self::InvalidFormat(e.to_string())
-    }
-}
-
-impl From<ParseRecordFromCsvError> for ReadError {
-    fn from(e: ParseRecordFromCsvError) -> Self {
-        Self::InvalidFormat(e.to_string())
-    }
-}
-
-impl From<ParseRecordFromBinError> for ReadError {
-    fn from(e: ParseRecordFromBinError) -> Self {
-        Self::InvalidFormat(e.to_string())
-    }
-}
-
-impl From<std::io::Error> for ReadError {
-    fn from(e: std::io::Error) -> Self {
-        Self::UnexpectedError(e.to_string())
-    }
-}
-
+/// Ошибка записи данных.
 #[derive(Debug, Error)]
 pub enum WriteError {
+    /// Ошибка записи заголовка в CSV формате.
     #[error("Write header error: {0}")]
     WriteHeaderError(String),
+
+    /// Непредвиденная ошибка записи данных.
     #[error("Unexpected error: {0}")]
     UnexpectedError(String),
-}
 
-impl From<std::io::Error> for WriteError {
-    fn from(e: std::io::Error) -> Self {
-        Self::UnexpectedError(e.to_string())
-    }
+    /// Ошибка записи данных, не связанная с его типом.
+    #[error("Read data error: {0}")]
+    Io(#[from] std::io::Error),
 }

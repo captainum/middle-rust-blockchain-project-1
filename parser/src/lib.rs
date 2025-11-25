@@ -20,6 +20,7 @@ mod record;
 
 use record::Record;
 
+use crate::record::errors::ParseRecordFromCsvError;
 use errors::{ReadError, WriteError};
 use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 
@@ -145,9 +146,9 @@ impl YPBank {
         let expected_header = Self::prepare_header();
 
         if header != expected_header {
-            Err(ReadError::InvalidFormat(
+            Err(ParseRecordFromCsvError::UnexpectedError(
                 "invalid header structure".to_string(),
-            ))
+            ))?
         } else {
             Ok(())
         }
@@ -159,6 +160,7 @@ mod tests {
     use super::record::status::Status;
     use super::record::tx_type::TxType;
     use super::*;
+    use crate::record::errors::{ParseRecordFromBinError, ParseRecordFromTxtError};
     use rstest::rstest;
     use std::io::Cursor;
 
@@ -282,10 +284,13 @@ DESCRIPTION: "User withdrawal"
         let result = YPBank::read_from_text(&mut reader);
 
         let result = result.unwrap_err();
-        assert!(matches!(result, ReadError::InvalidFormat(_)));
+        assert!(matches!(
+            result,
+            ReadError::FromText(ParseRecordFromTxtError::UnexpectedError(_))
+        ));
         assert_eq!(
             result.to_string(),
-            "Invalid format: Unexpected error: stream did not contain valid UTF-8"
+            "Text format parsing error: Unexpected error: stream did not contain valid UTF-8"
         );
     }
 
@@ -399,10 +404,13 @@ DESCRIPTION: "User withdrawal"
         let result = YPBank::read_from_csv(&mut cursor);
 
         let result = result.unwrap_err();
-        matches!(result, ReadError::InvalidFormat(_));
+        matches!(
+            result,
+            ReadError::FromCsv(ParseRecordFromCsvError::UnexpectedError(_))
+        );
         assert_eq!(
             result.to_string(),
-            "Invalid format: invalid header structure"
+            "CSV format parsing error: Unexpected error: invalid header structure"
         );
     }
 
@@ -412,10 +420,10 @@ DESCRIPTION: "User withdrawal"
         let result = YPBank::read_from_csv(&mut cursor);
 
         let result = result.unwrap_err();
-        assert!(matches!(result, ReadError::UnexpectedError(_)));
+        assert!(matches!(result, ReadError::Io(std::io::Error { .. })));
         assert_eq!(
             result.to_string(),
-            "Unexpected error: stream did not contain valid UTF-8"
+            "Read data error: stream did not contain valid UTF-8"
         );
     }
 
@@ -429,10 +437,13 @@ DESCRIPTION: "User withdrawal"
         let result = YPBank::read_from_csv(&mut reader);
 
         let result = result.unwrap_err();
-        assert!(matches!(result, ReadError::InvalidFormat(_)));
+        assert!(matches!(
+            result,
+            ReadError::FromCsv(ParseRecordFromCsvError::InvalidCountOfColumns(_))
+        ));
         assert_eq!(
             result.to_string(),
-            "Invalid format: Invalid count of columns: 7"
+            "CSV format parsing error: Invalid count of columns: 7"
         );
     }
 
@@ -535,8 +546,14 @@ DESCRIPTION: "User withdrawal"
         let result = YPBank::read_from_bin(&mut reader);
 
         let result = result.unwrap_err();
-        assert!(matches!(result, ReadError::InvalidFormat(_)));
-        assert_eq!(result.to_string(), "Invalid format: Invalid magic number");
+        assert!(matches!(
+            result,
+            ReadError::FromBin(ParseRecordFromBinError::InvalidMagicNumber)
+        ));
+        assert_eq!(
+            result.to_string(),
+            "Binary format parsing error: Invalid magic number"
+        );
     }
 
     #[test]
