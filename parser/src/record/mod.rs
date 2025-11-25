@@ -3,10 +3,10 @@
 use std::collections::HashSet;
 use std::io::{BufRead, Write};
 
-pub mod errors;
-pub mod keys;
-pub mod status;
-pub mod tx_type;
+pub(crate) mod errors;
+pub(crate) mod keys;
+pub(crate) mod status;
+pub(crate) mod tx_type;
 
 use errors::{
     ParseRecordFromBinError, ParseRecordFromCsvError, ParseRecordFromTxtError, ParseStatusError,

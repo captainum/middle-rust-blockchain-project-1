@@ -11,7 +11,9 @@
 //! методов [`read_from_text`], [`read_from_csv`], [`read_from_bin`] для соответствующих форматов данных.
 //!
 //! Запись производится в назначение, реализующее трейт [`Write`], при помощи
-//! методов ['write_to_text'], ['write_to_csv'], ['write_to_bin']  для соответствующих форматов данных.
+//! методов ['write_to_text'], ['write_to_csv'], ['write_to_bin'] для соответствующих форматов данных.
+
+#![deny(unreachable_pub)]
 
 mod errors;
 mod record;
