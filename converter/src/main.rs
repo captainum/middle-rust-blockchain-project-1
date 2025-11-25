@@ -1,7 +1,7 @@
 use clap::Parser;
 use parser::{
-    YPBank, YPBankBin, YPBankCsv, YPBankText,
-    errors::{ReadError, WriteError},
+    YPBankImpl,
+    errors::{FormatError, ReadError, WriteError},
 };
 use std::io::Write;
 use thiserror::Error;
@@ -25,9 +25,8 @@ struct Args {
 /// Ошибка парсинга данных.
 #[derive(Error, Debug)]
 enum CliError {
-    /// Некорректный формат данных.
-    #[error("Invalid format: {0}")]
-    UnknownFormat(String),
+    #[error(transparent)]
+    UnknownFormat(#[from] FormatError),
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -42,34 +41,20 @@ enum CliError {
     TooBigFile,
 }
 
-/// Формат данных.
-enum Format {
-    /// Текстовый формат.
-    Text,
-
-    /// CSV-формат.
-    Csv,
-
-    /// Бинарный формат.
-    Bin,
-}
-
-impl TryFrom<&str> for Format {
-    type Error = CliError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "text" => Ok(Self::Text),
-            "csv" => Ok(Self::Csv),
-            "bin" => Ok(Self::Bin),
-            _ => Err(CliError::UnknownFormat(value.to_string())),
+macro_rules! open_and_read {
+    ($file:expr, $format:expr) => {{
+        if std::fs::metadata(&$file)?.len() > 1024 * 1024 * 1024 {
+            return Err(CliError::TooBigFile);
         }
-    }
+
+        let mut file = std::fs::File::open($file)?;
+        $format.read_from(&mut file)?
+    }};
 }
 
 macro_rules! convert_format {
     ($input:expr) => {
-        $input.as_str().try_into()?
+        YPBankImpl::try_from($input)?
     };
 }
 
@@ -77,28 +62,14 @@ fn run() -> Result<(), CliError> {
     let args = Args::parse();
 
     let input_filename = args.input;
-    let input_format: Format = convert_format!(args.input_format);
-    let output_format: Format = convert_format!(args.output_format);
+    let input_format = convert_format!(args.input_format.as_str());
+    let output_format = convert_format!(args.output_format.as_str());
 
-    if std::fs::metadata(&input_filename)?.len() > 1024 * 1024 * 1024 {
-        return Err(CliError::TooBigFile);
-    }
-
-    let mut input_file = std::fs::File::open(input_filename)?;
-
-    let records = match input_format {
-        Format::Text => YPBankText::read_from(&mut input_file)?.records,
-        Format::Csv => YPBankCsv::read_from(&mut input_file)?.records,
-        Format::Bin => YPBankBin::read_from(&mut input_file)?.records,
-    };
+    let records = open_and_read!(input_filename, input_format);
 
     let mut stdout = std::io::stdout().lock();
 
-    match output_format {
-        Format::Text => YPBankText { records }.write_to(&mut stdout),
-        Format::Csv => YPBankCsv { records }.write_to(&mut stdout),
-        Format::Bin => YPBankBin { records }.write_to(&mut stdout),
-    }?;
+    output_format.write_to(records, &mut stdout)?;
 
     stdout.flush()?;
 

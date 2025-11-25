@@ -21,11 +21,11 @@ pub mod errors;
 pub mod record;
 mod text_format;
 
-use errors::{ReadError, WriteError};
-use std::io::{Read, Write};
-
+use crate::record::Record;
 pub use bin_format::YPBankBin;
 pub use csv_format::YPBankCsv;
+use errors::{FormatError, ReadError, WriteError};
+use std::io::{Read, Write};
 pub use text_format::YPBankText;
 
 /// Трейт для парсинга и хранения данных о банковских операциях.
@@ -35,6 +35,45 @@ pub trait YPBank: Sized {
 
     /// Записать данные о банковских операциях.
     fn write_to<W: Write>(&self, w: &mut W) -> Result<(), WriteError>;
+}
+
+pub enum YPBankImpl {
+    Text,
+    Csv,
+    Bin,
+}
+
+impl TryFrom<&str> for YPBankImpl {
+    type Error = FormatError;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        match s {
+            "text" => Ok(YPBankImpl::Text),
+            "csv" => Ok(YPBankImpl::Csv),
+            "bin" => Ok(YPBankImpl::Bin),
+            _ => Err(FormatError::InvalidFormat(s.to_string())),
+        }
+    }
+}
+
+impl YPBankImpl {
+    pub fn read_from<R: Read>(&self, r: &mut R) -> Result<Vec<Record>, ReadError> {
+        Ok(match self {
+            YPBankImpl::Text => YPBankText::read_from(r)?.records,
+            YPBankImpl::Csv => YPBankCsv::read_from(r)?.records,
+            YPBankImpl::Bin => YPBankBin::read_from(r)?.records,
+        })
+    }
+
+    pub fn write_to<W: Write>(&self, records: Vec<Record>, w: &mut W) -> Result<(), WriteError> {
+        match self {
+            YPBankImpl::Text => YPBankText { records }.write_to(w)?,
+            YPBankImpl::Csv => YPBankCsv { records }.write_to(w)?,
+            YPBankImpl::Bin => YPBankBin { records }.write_to(w)?,
+        };
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]

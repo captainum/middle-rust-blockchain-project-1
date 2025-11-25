@@ -38,3 +38,9 @@ pub enum WriteError {
     #[error("Read data error: {0}")]
     Io(#[from] std::io::Error),
 }
+
+#[derive(Error, Debug)]
+pub enum FormatError {
+    #[error("Invalid data format: {0}")]
+    InvalidFormat(String),
+}

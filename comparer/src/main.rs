@@ -1,6 +1,8 @@
 use clap::Parser;
-use parser::errors::{ReadError, WriteError};
-use parser::{YPBank, YPBankBin, YPBankCsv, YPBankText};
+use parser::{
+    YPBankImpl,
+    errors::{FormatError, ReadError, WriteError},
+};
 use thiserror::Error;
 
 #[derive(Parser, Debug)]
@@ -26,9 +28,8 @@ struct Args {
 /// Ошибка парсинга данных.
 #[derive(Error, Debug)]
 enum CliError {
-    /// Некорректный формат данных.
-    #[error("Invalid format: {0}")]
-    UnknownFormat(String),
+    #[error(transparent)]
+    UnknownFormat(#[from] FormatError),
 
     #[error("The number of transactions in the files differs ({len1} != {len2})!")]
     UnequalData { len1: usize, len2: usize },
@@ -46,49 +47,20 @@ enum CliError {
     TooBigFile,
 }
 
-/// Формат данных.
-enum Format {
-    /// Текстовый формат.
-    Text,
-
-    /// CSV-формат.
-    Csv,
-
-    /// Бинарный формат.
-    Bin,
-}
-
-impl TryFrom<&str> for Format {
-    type Error = CliError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "text" => Ok(Self::Text),
-            "csv" => Ok(Self::Csv),
-            "bin" => Ok(Self::Bin),
-            _ => Err(CliError::UnknownFormat(value.to_string())),
-        }
-    }
-}
-
 macro_rules! open_and_read {
-    ($file:expr, $format:expr, $name:literal) => {{
+    ($file:expr, $format:expr) => {{
         if std::fs::metadata(&$file)?.len() > 1024 * 1024 * 1024 {
             return Err(CliError::TooBigFile);
         }
 
         let mut file = std::fs::File::open($file)?;
-        match $format {
-            Format::Text => YPBankText::read_from(&mut file)?.records,
-            Format::Csv => YPBankCsv::read_from(&mut file)?.records,
-            Format::Bin => YPBankBin::read_from(&mut file)?.records,
-        }
+        $format.read_from(&mut file)?
     }};
 }
 
 macro_rules! convert_format {
     ($input:expr) => {
-        $input.as_str().try_into()?
+        YPBankImpl::try_from($input)?
     };
 }
 
@@ -97,11 +69,11 @@ fn run() -> Result<(), CliError> {
 
     let file1 = args.file1;
     let file2 = args.file2;
-    let format1: Format = convert_format!(args.format1);
-    let format2: Format = convert_format!(args.format2);
+    let format1 = convert_format!(args.format1.as_str());
+    let format2 = convert_format!(args.format2.as_str());
 
-    let records1 = open_and_read!(file1.clone(), format1, "--file1");
-    let records2 = open_and_read!(file2.clone(), format2, "--file2");
+    let records1 = open_and_read!(file1.clone(), format1);
+    let records2 = open_and_read!(file2.clone(), format2);
 
     if records1.len() != records2.len() {
         return Err(CliError::UnequalData {
