@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-thiserror = "2.0"
-byteorder = "1.5"
+thiserror = { workspace = true }
+byteorder = { workspace = true }
 
 [dev-dependencies]
-rstest = "0.26"
+rstest = { workspace = true }

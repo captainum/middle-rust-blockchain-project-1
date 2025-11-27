@@ -159,21 +159,14 @@ pub enum ParseRecordFromBinError {
     InvalidRecordSize(u32),
 
     /// Некорректное значение поля записи.
-    #[error("{0}")]
-    InvalidValue(ParseValueError),
+    #[error(transparent)]
+    InvalidValue(#[from] ParseValueError),
 
     /// Неожиданная ошибка парсинга данных.
     #[error("Unexpected error: {0}")]
     UnexpectedError(String),
 }
 
-/// Реализация трейта [`From<ParseValueError>`] для [`ParseRecordFromBinError`].
-impl From<ParseValueError> for ParseRecordFromBinError {
-    /// Реализация метода [`From<ParseValueError>::from`] для [`ParseRecordFromBinError`].
-    fn from(e: ParseValueError) -> Self {
-        ParseRecordFromBinError::InvalidValue(e)
-    }
-}
 /// Реализация трейта [`From<std::io::Error>`] для [`ParseRecordFromBinError`].
 impl From<std::io::Error> for ParseRecordFromBinError {
     /// Реализация метода [`From<std::io::Error>::from`] для [`ParseRecordFromBinError`].

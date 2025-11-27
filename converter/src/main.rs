@@ -1,123 +1,92 @@
-use parser::YPBank;
-use std::env;
+use clap::Parser;
+use parser::{
+    YPBankImpl,
+    errors::{FormatError, ReadError, WriteError},
+};
+use std::io::Write;
 use thiserror::Error;
-fn help() -> &'static str {
-    r#"Usage:
-    converter --input [FILE] --input-format [FORMAT] --output-format [FORMAT]
 
-Options:
-    --input             File to read
-    --input-format      Data format in the file to read
-    --output-format     Output data format
-    --help              Print this message
-"#
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// File to read
+    #[arg(long, value_name = "FILE")]
+    input: std::path::PathBuf,
+
+    /// Data format in the file to read
+    #[clap(long, value_name = "FORMAT")]
+    input_format: String,
+
+    /// Output data format
+    #[clap(long, value_name = "FORMAT")]
+    output_format: String,
 }
 
-/// Формат данных.
-enum Format {
-    /// Текстовый формат.
-    Text,
-
-    /// CSV-формат.
-    Csv,
-
-    /// Бинарный формат.
-    Bin,
-}
-
-/// Ошибка парсинга формата данных.
+/// Ошибка парсинга данных.
 #[derive(Error, Debug)]
-enum InputFormatError {
-    /// Некорректный формат.
-    #[error("Invalid format: {0}")]
-    UnknownFormat(String),
+enum CliError {
+    #[error(transparent)]
+    UnknownFormat(#[from] FormatError),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error(transparent)]
+    ReadData(#[from] ReadError),
+
+    #[error(transparent)]
+    WriteData(#[from] WriteError),
+
+    #[error("File is too big!")]
+    TooBigFile,
 }
 
-impl TryFrom<&str> for Format {
-    type Error = InputFormatError;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "text" => Ok(Self::Text),
-            "csv" => Ok(Self::Csv),
-            "bin" => Ok(Self::Bin),
-            _ => Err(InputFormatError::UnknownFormat(value.to_string())),
+macro_rules! open_and_read {
+    ($file:expr, $format:expr) => {{
+        if std::fs::metadata(&$file)?.len() > 1024 * 1024 * 1024 {
+            return Err(CliError::TooBigFile);
         }
-    }
+
+        let mut file = std::fs::File::open($file)?;
+        $format.read_from(&mut file)?
+    }};
+}
+
+macro_rules! convert_format {
+    ($input:expr) => {
+        YPBankImpl::try_from($input)?
+    };
+}
+
+fn run() -> Result<(), CliError> {
+    let args = Args::parse();
+
+    let input_filename = args.input;
+    let input_format = convert_format!(args.input_format.as_str());
+    let output_format = convert_format!(args.output_format.as_str());
+
+    let records = open_and_read!(input_filename, input_format);
+
+    let mut stdout = std::io::stdout().lock();
+
+    output_format.write_to(records, &mut stdout)?;
+
+    stdout.flush()?;
+
+    Ok(())
 }
 
 fn main() {
-    let mut args = env::args();
+    if let Err(err) = run() {
+        let exit_code = match err {
+            CliError::UnknownFormat(_) => -1,
+            CliError::Io(_) => -2,
+            CliError::ReadData(_) => -3,
+            CliError::WriteData(_) => -4,
+            CliError::TooBigFile => -5,
+        };
 
-    if args.len() != 7 {
-        println!("{}", help());
-        return;
+        eprintln!("{}", err);
+        std::process::exit(exit_code);
     }
-
-    args.next();
-
-    let mut input_filename = String::default();
-    let mut input_format: Option<Format> = None;
-    let mut output_format: Option<Format> = None;
-
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--help" => {
-                println!("{}", help());
-                return;
-            }
-            "--input" => {
-                input_filename = args
-                    .next()
-                    .unwrap_or_else(|| panic!("No input file specified!"));
-            }
-            val if val == "--input-format" || val == "--output-format" => {
-                if let Some(format) = args.next() {
-                    match format.as_str().try_into() {
-                        Ok(fmt) => {
-                            if val == "--input-format" {
-                                input_format = Some(fmt);
-                            } else {
-                                output_format = Some(fmt);
-                            }
-                        }
-                        Err(e) => {
-                            panic!("{}", e.to_string());
-                        }
-                    }
-                } else {
-                    panic!("Input file format not specified!");
-                }
-            }
-            _ => {
-                panic!("An unknown parameter was passed!");
-            }
-        }
-    }
-
-    if input_filename.is_empty() {
-        panic!("No input file specified!");
-    }
-
-    let input_format = input_format.unwrap_or_else(|| panic!("Input file format not specified!"));
-
-    let output_format =
-        output_format.unwrap_or_else(|| panic!("Output data format not specified!"));
-
-    let mut input_file = std::fs::File::open(input_filename)
-        .unwrap_or_else(|e| panic!("Error reading input file: {}", e));
-
-    let data = match input_format {
-        Format::Text => YPBank::read_from_text(&mut input_file),
-        Format::Csv => YPBank::read_from_csv(&mut input_file),
-        Format::Bin => YPBank::read_from_bin(&mut input_file),
-    }
-    .unwrap_or_else(|e| panic!("Error reading data from file: {}", e));
-
-    match output_format {
-        Format::Text => data.write_to_text(&mut std::io::stdout()),
-        Format::Csv => data.write_to_csv(&mut std::io::stdout()),
-        Format::Bin => data.write_to_bin(&mut std::io::stdout()),
-    }
-    .unwrap_or_else(|e| panic!("Data output error: {}", e));
 }

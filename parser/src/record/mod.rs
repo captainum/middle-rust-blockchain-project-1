@@ -1,12 +1,12 @@
 //! Модуль описания записи о транзакции.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::io::{BufRead, Write};
 
-pub mod errors;
-pub mod keys;
-pub mod status;
-pub mod tx_type;
+pub(crate) mod errors;
+pub(crate) mod keys;
+pub(crate) mod status;
+pub(crate) mod tx_type;
 
 use errors::{
     ParseRecordFromBinError, ParseRecordFromCsvError, ParseRecordFromTxtError, ParseStatusError,
@@ -245,10 +245,7 @@ impl Record {
     pub fn from_text<R: BufRead>(r: &mut R) -> Result<Self, ParseRecordFromTxtError> {
         let mut result = Self::default();
 
-        let mut expected_keys = Self::EXPECTED_KEYS
-            .iter()
-            .map(|&k| (k, false))
-            .collect::<HashMap<_, _>>();
+        let mut expected_keys = HashSet::from(Self::EXPECTED_KEYS);
 
         loop {
             let mut line = String::new();
@@ -259,9 +256,7 @@ impl Record {
                 break;
             }
 
-            if line.ends_with('\n') {
-                line.truncate(line.len() - 1);
-            }
+            line = line.trim_end_matches(['\r', '\n']).to_string();
 
             if line.starts_with('#') {
                 continue;
@@ -284,7 +279,13 @@ impl Record {
             expected_keys.remove(&key);
         }
 
-        if let Some((key, _)) = expected_keys.iter().find(|(_, val)| !*val) {
+        if !expected_keys.is_empty() {
+            let key = expected_keys.iter().nth(0).ok_or_else(|| {
+                ParseRecordFromTxtError::UnexpectedError(
+                    "Expected keys are not empty, but could not get value".to_string(),
+                )
+            })?;
+
             return Err(ParseRecordFromTxtError::MissingKey(key.to_string()));
         }
 
@@ -331,9 +332,7 @@ DESCRIPTION: "{}""#,
             ));
         }
 
-        if line.ends_with('\n') {
-            line.truncate(line.len() - 1);
-        }
+        line = line.trim_end_matches(['\r', '\n']).to_string();
 
         let values = line
             .splitn(Self::EXPECTED_KEYS.len(), ',')
@@ -425,6 +424,15 @@ DESCRIPTION: "{}""#,
 
         let desc_len = r.read_u32::<BigEndian>()?;
 
+        if record_size != Self::BINARY_MIN_RECORD_SIZE + desc_len {
+            return Err(ParseRecordFromBinError::UnexpectedError(format!(
+                "true record size is not equal to expected (record size({}) != static length ({}) + description length ({}))",
+                record_size,
+                Self::BINARY_MIN_RECORD_SIZE,
+                desc_len
+            )));
+        }
+
         if desc_len > 0 {
             let mut buffer = vec![0u8; desc_len as usize];
             r.read_exact(&mut buffer)?;
@@ -483,15 +491,15 @@ DESCRIPTION: "{}""#,
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::errors::ParseKeyError;
+    use super::*;
     use rstest::rstest;
     use std::io::{BufReader, Cursor};
 
     #[test]
     fn test_read_from_text_correct_record() {
         let mut reader = BufReader::new(Cursor::new(
-            vec![
+            [
                 "TX_ID: 1",
                 "TX_TYPE: DEPOSIT",
                 "FROM_USER_ID: 0",
@@ -525,7 +533,7 @@ mod tests {
     #[test]
     fn test_read_from_text_correct_record_with_comments() {
         let mut reader = BufReader::new(Cursor::new(
-            vec![
+            [
                 "# comment1",
                 "TX_ID: 1",
                 "TX_TYPE: DEPOSIT",
@@ -580,7 +588,7 @@ DESCRIPTION: "Terminal deposit"
     #[test]
     fn test_read_from_text_incorrect_line() {
         let mut reader = BufReader::new(Cursor::new(
-            vec![
+            [
                 "TX_ID: 1",
                 "TX_TYPE: DEPOSIT",
                 "FROM_USER_ID: 1",
@@ -610,7 +618,7 @@ DESCRIPTION: "Terminal deposit"
     #[test]
     fn test_read_from_text_no_colon_found() {
         let mut reader = BufReader::new(Cursor::new(
-            vec![
+            [
                 "# comment",
                 "TX_ID: 1",
                 "TX_TYPE: DEPOSIT",
@@ -649,8 +657,7 @@ DESCRIPTION: "Terminal deposit"
         #[case] value: &str,
         #[case] description: &str,
     ) {
-        let mut reader =
-            BufReader::new(Cursor::new(vec![format!("{}: {}", key, value)].join("\n")));
+        let mut reader = BufReader::new(Cursor::new(format!("{}: {}", key, value)));
 
         let result = Record::from_text(&mut reader);
 
@@ -668,7 +675,7 @@ DESCRIPTION: "Terminal deposit"
     #[test]
     fn test_read_from_text_unexpected_key() {
         let mut reader = BufReader::new(Cursor::new(
-            vec![
+            [
                 "TX_ID: 1",
                 "TX_TYPE: DEPOSIT",
                 "FROM_USER_ID: 1",
@@ -695,7 +702,7 @@ DESCRIPTION: "Terminal deposit"
     #[test]
     fn test_read_from_text_missing_key() {
         let mut reader = BufReader::new(Cursor::new(
-            vec![
+            [
                 "TX_ID: 1",
                 "TX_TYPE: DEPOSIT",
                 "FROM_USER_ID: 1",
@@ -747,7 +754,7 @@ DESCRIPTION: "Initial account funding"
     #[case("1001,DEPOSIT,0,501,50000,1672531200000,SUCCESS,\"Initial account funding\"")]
     #[case("1001,DEPOSIT,0,501,50000,1672531200000,SUCCESS,\"Initial account funding\"\n")]
     fn test_read_from_csv_correct_record(#[case] line: &str) {
-        let mut reader = BufReader::new(Cursor::new(vec![line].join("\n")));
+        let mut reader = BufReader::new(Cursor::new(line));
 
         let result = Record::from_csv(&mut reader);
 
@@ -803,7 +810,7 @@ DESCRIPTION: "Initial account funding"
     #[case("1001", 1)]
     #[case("1001,DEPOSIT,0,501,50000,SUCCESS,\"Initial account funding\"", 7)]
     fn test_read_from_csv_incorrect_count_of_columns(#[case] line: &str, #[case] count: usize) {
-        let mut reader = BufReader::new(Cursor::new(vec![line].join("\n")));
+        let mut reader = BufReader::new(Cursor::new(line));
 
         let result = Record::from_csv(&mut reader);
 
@@ -864,7 +871,7 @@ DESCRIPTION: "Initial account funding"
         #[case] value: &str,
         #[case] description: &str,
     ) {
-        let mut reader = BufReader::new(Cursor::new(vec![line].join("\n")));
+        let mut reader = BufReader::new(Cursor::new(line));
 
         let result = Record::from_csv(&mut reader);
 
@@ -940,7 +947,7 @@ DESCRIPTION: "Initial account funding"
     fn test_read_from_bin_correct_record_empty_description() {
         let mut reader = BufReader::new(Cursor::new(vec![
             0x59, 0x50, 0x42, 0x4E, // MAGIC
-            0x00, 0x00, 0x00, 0x3f, // RECORD_SIZE
+            0x00, 0x00, 0x00, 0x2e, // RECORD_SIZE
             0x00, 0x03, 0x8d, 0x7e, 0xa4, 0xc6, 0x80, 0x00, // TX_ID
             0x00, // TX_TYPE
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // FROM_USER_ID
@@ -988,6 +995,36 @@ DESCRIPTION: "Initial account funding"
     }
 
     #[test]
+    fn test_read_from_bin_invalid_desc_len() {
+        let mut reader = BufReader::new(Cursor::new(vec![
+            0x59, 0x50, 0x42, 0x4E, // MAGIC
+            0x00, 0x00, 0x00, 0x3f, // RECORD_SIZE
+            0x00, 0x03, 0x8d, 0x7e, 0xa4, 0xc6, 0x80, 0x00, // TX_ID
+            0x00, // TX_TYPE
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // FROM_USER_ID
+            0x7f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, // TO_USER_ID
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x64, // AMOUNT
+            0x00, 0x00, 0x01, 0x7c, 0x38, 0x94, 0xfa, 0x60, // TIMESTAMP
+            0x01, // STATUS
+            0x00, 0x00, 0x00, 0x10, // DESCRIPTION_SIZE
+            0x22, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x20, 0x6e, 0x75, 0x6d, 0x62, 0x65, 0x72,
+            0x20, 0x31, 0x22, // DESCRIPTION
+        ]));
+
+        let result = Record::from_bin(&mut reader);
+
+        let result = result.unwrap_err();
+        assert!(matches!(
+            result,
+            ParseRecordFromBinError::UnexpectedError(_)
+        ));
+        assert_eq!(
+            result.to_string(),
+            "Unexpected error: true record size is not equal to expected (record size(63) != static length (46) + description length (16))"
+        );
+    }
+
+    #[test]
     fn test_read_from_bin_invalid_magic() {
         let mut reader = BufReader::new(Cursor::new(vec![0x59, 0x51, 0x42, 0x4E]));
 
@@ -1031,7 +1068,7 @@ DESCRIPTION: "Initial account funding"
             0x01, // STATUS
             0x00, 0x00, 0x00, 0x11, // DESCRIPTION_SIZE
             0x22, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x20, 0x6e, 0x75, 0x6d, 0x62, 0x65, 0x72,
-            0x20, 0x31, // DESCRIPTION
+            0x20, // DESCRIPTION
         ]));
 
         let result = Record::from_bin(&mut reader);
